@@ -1,0 +1,27 @@
+[package]
+name = "fpcheck"
+version = "0.1.0"
+edition = "2021"
+description = "A Rust-style feedback layer for Free Pascal: precise, structured, actionable diagnostics"
+license = "MIT"
+repository = "https://github.com/thread3d/fpcheck"
+
+[[bin]]
+name = "fpcheck"
+path = "src/main.rs"
+
+[lib]
+name = "fpcheck"
+path = "src/lib.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.release]
+opt-level = 3

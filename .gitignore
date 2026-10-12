@@ -12,3 +12,10 @@
 # Local env / logs
 *.log
 .env
+
+# Rust
+/target/
+**/*.rs.bk
+
+# Local CARGO_HOME used when the default is outside the workspace
+/.cargo-home/

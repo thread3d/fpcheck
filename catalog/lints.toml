@@ -1,0 +1,416 @@
+# Analyzer lint catalog (spec section 6.4): message text, as data, not code.
+#
+# Schema, one table per stable diagnostic code:
+#   name     = short kebab-case lint name (required)
+#   headline = one-line message template (required); `{...}` are placeholders
+#   label    = optional caption for the primary span
+#   help     = optional array of "what to do" lines
+#   note     = optional "why" line
+#
+# Default *levels* are deliberately NOT here: they live with the lint
+# implementation, which is the single place a code is declared stable.
+#
+# Templating: `{name}` is a substitution placeholder; write a literal brace by
+# doubling it, so the annotation `{@allow}` is written `{{@allow}}`.
+
+[P0001]
+name = "allow-without-reason"
+headline = "`{{@allow}}` without a `reason:`"
+label = "suppression has no justification"
+help = ["add `reason: \"...\"` explaining why the diagnostic does not apply"]
+note = "every suppression must be auditable; there is no blanket disable"
+
+[P0101]
+name = "uninitialized-use"
+headline = "`{name}` may be read before it is assigned"
+label = "read before definite assignment"
+help = [
+    "assign `{name}` on every path before this point",
+    "or initialize it where it is declared",
+]
+note = "FPC only hints about this, and misses paths through branches, loops and exceptions"
+
+[P0102]
+name = "unused-result"
+headline = "the result of `{callee}` is discarded"
+label = "the value returned here is dropped"
+help = [
+    "use the returned value: check it, propagate it, or return it",
+    "if only the call's side effect matters, assign the result to a local to make that explicit",
+]
+note = "`{callee}` is `{{@must_use}}`, so ignoring the result silently drops an error or a computed value"
+
+[P0103]
+name = "unused-binding"
+headline = "`{name}` is declared but never used"
+label = "declared here"
+help = [
+    "remove the declaration, or",
+    "prefix the name with `_` if it must stay for a signature or an interface",
+]
+
+[P0104]
+name = "unreachable-code"
+headline = "this code can never run"
+label = "unreachable after `{construct}`"
+help = [
+    "delete the dead code, or",
+    "remove the `{construct}` that makes it unreachable",
+]
+
+[P0105]
+name = "shadowed-name"
+headline = "`{name}` hides the {outer} of the same name"
+label = "this declaration shadows an outer binding"
+help = [
+    "rename this binding to something distinct",
+    "or read the outer {outer} explicitly before this point",
+]
+
+[P0106]
+name = "could-be-const"
+headline = "`{name}` is never reassigned, so it can be `const`"
+label = "the value never changes after it is set"
+help = [
+    "declare the parameter as `const`",
+    "or declare the local with `const` instead of `var`",
+]
+
+[P0107]
+name = "result-never-assigned"
+headline = "`Result` is not assigned on every path out of `{name}`"
+label = "this path returns without setting `Result`"
+help = [
+    "assign `Result` before every `exit` and before the routine ends",
+    "or raise instead of falling through to the end",
+]
+
+[P0201]
+name = "non-exhaustive-case"
+headline = "non-exhaustive `case`: `{name}` is not handled"
+label = "`{type}` has {n} members but not all are handled"
+help = [
+    "add a branch for `{name}`",
+    "or add an explicit `else` whose behaviour you actually intend",
+]
+note = "a `case` without `else` silently does nothing for unlisted values"
+
+[P0202]
+name = "wildcard-else-on-enum"
+headline = "`else` on an `{{@exhaustive}}` `case` hides newly added members"
+label = "the `else` defeats the exhaustiveness check"
+help = [
+    "list every member explicitly so adding one becomes a compile error",
+    "or drop `{{@exhaustive}}` if the fallback is genuinely intended",
+]
+
+[P0203]
+name = "variant-tag-mismatch"
+headline = "`{name}` is read from a variant arm the tag does not select"
+label = "this field belongs to a different variant"
+help = [
+    "read `{name}` only where the tag is set to `{tag}`",
+    "or test the tag before choosing which field to read",
+]
+
+[P0204]
+name = "duplicate-case-label"
+headline = "`case` label `{name}` is already handled"
+label = "duplicate label or overlapping range"
+help = [
+    "remove the duplicate branch",
+    "or make the ranges disjoint",
+]
+
+[P0301]
+name = "implicit-narrowing"
+headline = "implicit narrowing conversion from `{from}` to `{to}`"
+label = "the value can be truncated here"
+help = [
+    "convert explicitly, e.g. `{to}(x)`, so the narrowing is visible",
+    "or widen the destination to `{from}`",
+]
+note = "the conversion is silent unless range checking happens to be on"
+
+[P0302]
+name = "signed-unsigned-mix"
+headline = "signed `{from}` compared with unsigned `{to}`"
+label = "the operands have different signedness"
+help = [
+    "convert both operands to one signed type",
+    "or check the ranges explicitly before comparing",
+]
+note = "the implicit conversion can turn a negative operand into a very large positive one"
+
+[P0303]
+name = "constant-out-of-range"
+headline = "constant `{value}` does not fit `{type}`"
+label = "the constant is outside the type's range"
+help = [
+    "correct the constant, or",
+    "widen the destination to a type that can hold `{value}`",
+]
+note = "this is caught here only because both the value and the target type are known at compile time"
+
+[P0304]
+name = "checks-disabled"
+headline = "`{$R-}`, `{$Q-}` or `{$I-}` disables runtime checks"
+label = "runtime checking turned off here"
+help = [
+    "remove the directive, or",
+    "wrap it in an `{{@unsafe(reason: \"...\")}}` region if it is genuinely required",
+]
+
+[P0305]
+name = "implicit-string-conversion"
+headline = "implicit string conversion from `{from}` to `{to}`"
+label = "string encodings are crossed without a conversion"
+help = [
+    "convert explicitly with `UTF8Encode`/`UTF8Decode` or the matching codepage routine",
+    "or make both sides the same string type",
+]
+note = "crossing codepages implicitly can drop or mangle non-ASCII text"
+
+[P0306]
+name = "float-equality"
+headline = "floating-point values compared with `=` or `<>`"
+label = "exact comparison"
+help = ["compare with an epsilon, e.g. `Abs(a - b) < 1e-9`"]
+note = "binary floating point cannot represent most decimal values exactly"
+
+[P0401]
+name = "nil-dereference"
+headline = "`{name}` may be `nil` when it is dereferenced"
+label = "no path proves `{name}` is non-nil here"
+help = [
+    "guard with `if {name} <> nil then`",
+    "or assert the invariant with `Assert({name} <> nil)` if the caller guarantees it",
+]
+
+[P0402]
+name = "nullable-to-nonnull"
+headline = "`{name}` may be `nil` but is used where `{{@nonnull}}` is required"
+label = "this target does not accept nil"
+help = [
+    "handle the missing case before this point",
+    "or mark the target `{{@nullable}}` if nil is genuinely allowed",
+]
+
+[P0403]
+name = "redundant-nil-check"
+headline = "nil check on `{name}` is redundant"
+label = "`{name}` is already known to be non-nil here"
+help = [
+    "remove the check",
+    "or remove the earlier check if this one is the intended guard",
+]
+
+[P0501]
+name = "leak"
+headline = "`{name}` is never freed on some path"
+label = "ownership is not released or transferred here"
+help = [
+    "free it before every exit from this routine, or",
+    "wrap the fallible section in `try..finally {name}.Free end`",
+]
+
+[P0502]
+name = "double-free"
+headline = "`{name}` is freed twice"
+label = "second free of the same value"
+help = [
+    "remove the second `Free`",
+    "or use `FreeAndNil({name})` so a repeated free becomes harmless",
+]
+note = "the earlier free is at the related span"
+
+[P0503]
+name = "use-after-free"
+headline = "`{name}` is used after it was freed"
+label = "the storage behind this value is already released"
+help = [
+    "move the use before the free, or",
+    "use `FreeAndNil` and check for nil before reading the value",
+]
+note = "the free or move that invalidates `{name}` is at the related span"
+
+[P0504]
+name = "free-of-borrowed"
+headline = "`{name}` is `{{@borrowed}}` and must not be freed here"
+label = "ownership of this value belongs to the caller"
+help = [
+    "remove the `Free`; the owner is responsible for releasing it",
+    "or take ownership explicitly with `{{@owned}}`/`{{@sink}}` if that is the intent",
+]
+
+[P0505]
+name = "create-without-protection"
+headline = "`{name}` is created here but a later call can raise before it is freed"
+label = "constructor result held across a fallible call"
+help = [
+    "wrap the body in `try..finally {name}.Free end`",
+    "or create `{name}` after the fallible call",
+]
+
+[P0506]
+name = "dangling-after-free"
+headline = "`{name}` is freed but left pointing at freed memory"
+label = "the reference is not cleared after the free"
+help = ["use `FreeAndNil({name})` so the reference becomes nil"]
+note = "any later read through this reference is a use-after-free"
+
+[P0507]
+name = "owned-field-not-released"
+headline = "`{name}` is `{{@owned}}` but `Destroy` never frees it"
+label = "owned field leaks when the instance is destroyed"
+help = [
+    "add `{name}.Free` to `Destroy`",
+    "or mark the field `{{@weak}}` if it does not own its target",
+]
+
+[P0508]
+name = "ownership-escape"
+headline = "`{name}` escapes to `{target}` without transferring ownership"
+label = "a local owner is stored into a longer-lived location"
+help = [
+    "mark the receiving parameter `{{@sink}}` to transfer ownership",
+    "or store a copy if the local keeps ownership",
+]
+
+[P0601]
+name = "var-param-aliasing"
+headline = "`{name}` is passed to both `{first}` and `{second}`"
+label = "one variable aliases two parameters"
+help = [
+    "pass a temporary copy for one of the arguments",
+    "or restructure the call so each argument is a distinct variable",
+]
+note = "the callee may see a write through one parameter when it reads the other"
+
+[P0602]
+name = "mutation-during-iteration"
+headline = "`{name}` is changed by `{callee}` while it is being iterated"
+label = "the container is modified during the loop"
+help = [
+    "collect the changes and apply them after the loop",
+    "or iterate over a copy",
+]
+
+[P0603]
+name = "interior-reference-invalidated"
+headline = "`{name}` points into `{container}`, which `{callee}` can reallocate"
+label = "reference held across a reallocating operation"
+help = [
+    "re-take the reference after the call",
+    "or copy the element out before the call",
+]
+
+[P0604]
+name = "reference-to-local-escapes"
+headline = "the address of local `{name}` escapes to `{target}`"
+label = "pointer to a stack local outlives its scope"
+help = [
+    "copy the value instead of taking its address",
+    "or heap-allocate the value if it must outlive this routine",
+]
+
+[P0701]
+name = "unsafe-outside-unsafe"
+headline = "unsafe construct `{construct}` outside an `{{@unsafe}}` region"
+label = "requires an explicit `{{@unsafe(reason: \"...\")}}` region"
+help = ["avoid it, or justify it with `{{@unsafe(reason: \"...\")}}`"]
+
+[P0702]
+name = "with-statement"
+headline = "`with` is banned"
+label = "`with` makes name resolution depend on an expression's type"
+help = ["bind the target to a local variable and write `local.Field` explicitly"]
+
+[P0703]
+name = "goto"
+headline = "`goto` jumps to label `{label}`"
+label = "unstructured control flow"
+help = ["restructure with `break`, `continue`, `exit`, or a nested routine"]
+
+[P0704]
+name = "unchecked-hard-cast"
+headline = "hard cast from `{from}` to `{to}` reinterprets the value without checking"
+label = "the cast changes size or managed-ness"
+help = [
+    "use a converting cast such as `{to}(x)` when the value is compatible",
+    "or justify the reinterpretation with `{{@unsafe(reason: \"...\")}}`",
+]
+
+[P0801]
+name = "empty-except"
+headline = "`except` block swallows the exception silently"
+label = "nothing is handled, logged, or re-raised"
+help = ["handle the specific exception, log it, or remove the `try..except`"]
+
+[P0802]
+name = "catch-all-except"
+headline = "catch-all `except` without re-raise or logging"
+label = "catches every exception type"
+help = ["catch specific exception classes", "or re-raise with `raise;` after logging"]
+
+[P0803]
+name = "exception-from-destructor"
+headline = "`{callee}` can raise out of `Destroy` or a `finally` block"
+label = "exception escaping a cleanup path"
+help = [
+    "guard the call and log the failure instead of propagating it",
+    "or move the fallible work out of the cleanup block",
+]
+note = "an exception during cleanup replaces the original exception and can skip the remaining cleanup"
+
+[P0804]
+name = "ignored-io-result"
+headline = "the result of `{callee}` is not checked while `{{$I-}}` is in effect"
+label = "an I/O failure would pass silently"
+help = [
+    "check `IOResult` immediately after the call",
+    "or restore `{{$I+}}` so the failure raises",
+]
+
+[P0901]
+name = "public-unused-externally"
+headline = "`{name}` is exported but never used outside its unit"
+label = "interface symbol with no external reference"
+help = [
+    "move it to the implementation section",
+    "or remove it if nothing outside needs it",
+]
+
+[P0902]
+name = "todo-marker"
+headline = "`{callee}` marker left in the code"
+label = "unfinished work"
+help = ["implement it, or remove the marker before shipping"]
+
+[P0903]
+name = "global-mutable-state"
+headline = "`{name}` is reachable from more than one thread entry point"
+label = "shared mutable state"
+help = [
+    "protect the access with a lock, or",
+    "pass the state explicitly instead of sharing it",
+]
+
+[T0001]
+name = "failed-test"
+headline = "test `{name}` failed"
+label = "assertion or exception raised in this test"
+help = [
+    "compare the expected and actual values in the notes and fix the code under test",
+    "re-run this single test after the fix",
+]
+
+[R0001]
+name = "heap-leak"
+headline = "leak: {n} bytes in {blocks} blocks allocated here"
+label = "allocation that is never freed"
+help = [
+    "free this allocation on every path, or",
+    "transfer it to an owner that outlives the program",
+]
+note = "found by heaptrc at exit; the static counterpart is P0501"

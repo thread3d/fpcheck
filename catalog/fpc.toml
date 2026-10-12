@@ -1,0 +1,470 @@
+# FPC compiler message catalog (spec sections 4.2 and 6.4).
+#
+# Keyed by the compiler's *message template* rather than its numeric id: this
+# project was built without an installed FPC, so the real ids from `-vq` output
+# could not be verified (spec section 4.1 says to verify them). When a numeric
+# id is present in the compiler output the normalizer emits `F<id>`; otherwise
+# it derives a stable code from the template, and entries here may pin one
+# explicitly with `code`.
+#
+# Schema, an array of tables:
+#   template = FPC message text with `{...}` placeholders (required)
+#   code     = optional explicit stable code; default is derived from template
+#   headline = clearer one-line message (required)
+#   label    = optional caption for the primary span
+#   help     = optional array of "what to do" lines
+#   note     = optional "why" line
+#
+# Templates below follow the wording in the FPC user manual, appendix C
+# ("Parser messages", "Type checking errors", "Symbol handling"). `code` is
+# left out everywhere on purpose: no numeric id has been verified against a
+# real `-vq` run, and the loader derives a stable code from the template.
+
+[[message]]
+template = "Identifier not found \"{name}\""
+headline = "undeclared identifier `{name}`"
+label = "not found in this scope"
+help = [
+    "check the spelling and the identifier's case",
+    "add the unit that declares it to the `uses` clause",
+    "if it is a field, qualify it with the instance that owns it",
+]
+
+[[message]]
+template = "Unknown identifier \"{name}\""
+headline = "`{name}` is not declared in this scope"
+label = "used outside the scope that declares it"
+help = [
+    "declare `{name}` before this point",
+    "or move the declaration so it is visible here",
+]
+
+[[message]]
+template = "Can't find unit {name} used by {user}"
+headline = "cannot find unit `{name}`"
+label = "unit not on the search path"
+help = ["add its directory to `[fpc] units` in fpcheck.toml"]
+
+[[message]]
+template = "Duplicate identifier \"{name}\""
+headline = "`{name}` is declared twice in the same scope"
+label = "this name is already taken"
+help = [
+    "rename one of the two declarations",
+    "or remove the duplicate if they are meant to be the same symbol",
+]
+
+[[message]]
+template = "Forward declaration not solved \"{name}\""
+headline = "forward declaration of `{name}` has no implementation"
+label = "declared forward, never defined"
+help = [
+    "add the implementation with the same parameter list and result type",
+    "or delete the forward declaration",
+]
+
+[[message]]
+template = "Forward type not resolved \"{name}\""
+headline = "forward type `{name}` is never defined"
+label = "referenced before it was completed"
+help = ["give `{name}` a full definition in the same type block"]
+
+[[message]]
+template = "Unit \"{name}\" not used in {user}"
+headline = "unit `{name}` is in the `uses` clause but unused"
+label = "no symbol from this unit is referenced"
+help = ["remove `{name}` from the `uses` clause"]
+
+[[message]]
+template = "Parameter \"{name}\" not used"
+headline = "parameter `{name}` is never used"
+label = "declared here"
+help = [
+    "remove the parameter, or",
+    "prefix the name with `_` if the signature must keep it",
+]
+
+[[message]]
+template = "Local variable \"{name}\" not used"
+headline = "local `{name}` is declared but never used"
+label = "declared here"
+help = [
+    "remove the local, or",
+    "prefix the name with `_` to mark it intentionally unused",
+]
+
+[[message]]
+template = "Local variable \"{name}\" is assigned but never used"
+headline = "`{name}` is assigned but its value is never read"
+label = "the last write here is dead"
+help = [
+    "remove the assignment and the local, or",
+    "read `{name}` where it was meant to be used",
+]
+
+[[message]]
+template = "Private field \"{name}\" is never used"
+headline = "private field `{name}` is never used"
+label = "declared here"
+help = ["remove the field, or use it if the class is meant to carry that state"]
+
+[[message]]
+template = "Function result does not seem to be set"
+headline = "`Result` is not set on every path out of this function"
+label = "this path returns without assigning `Result`"
+help = [
+    "assign `Result` before every `exit` and at the end of the function",
+    "or raise instead of returning an undefined value",
+]
+note = "the returned value is whatever the stack or heap happened to hold"
+
+[[message]]
+template = "Local variable \"{name}\" does not seem to be initialized"
+headline = "local `{name}` may be used before it is assigned"
+label = "read before definite assignment"
+help = ["assign `{name}` before this point on every path"]
+
+[[message]]
+template = "Variable \"{name}\" does not seem to be initialized"
+headline = "`{name}` may be used before it is assigned"
+label = "read before definite assignment"
+help = ["assign it before this point on every path"]
+
+[[message]]
+template = "Variable \"{name}\" read but nowhere assigned"
+headline = "`{name}` is read but never assigned anywhere"
+label = "no assignment to this variable exists"
+help = ["assign `{name}` before it is read"]
+
+[[message]]
+template = "Function result variable does not seem to be initialized"
+headline = "`Result` is read before it is assigned"
+label = "the result is used before the first assignment"
+help = ["assign `Result` before reading it"]
+
+[[message]]
+template = "Wrong number of parameters specified for call to \"{name}\""
+headline = "wrong number of arguments in the call to `{name}`"
+label = "this call does not match any declared parameter list"
+help = [
+    "pass an argument for every declared parameter",
+    "or check the overload you meant to call",
+]
+
+[[message]]
+template = "Illegal parameter list"
+headline = "argument types do not match `{name}`"
+label = "no overload accepts these arguments"
+help = ["compare the argument types with the declaration and add the conversions you meant"]
+
+[[message]]
+template = "Type mismatch"
+headline = "types do not match in this {construct}"
+label = "the two sides have incompatible types"
+help = [
+    "convert one side explicitly to the other's type",
+    "or correct the declaration if the wrong type was intended",
+]
+
+[[message]]
+template = "Incompatible types: got \"{got}\" expected \"{expected}\""
+headline = "incompatible types: got `{got}`, expected `{expected}`"
+label = "no conversion exists between these types"
+help = [
+    "convert with an explicit cast or a helper such as `IntToStr`",
+    "or change the declaration to accept `{got}`",
+]
+
+[[message]]
+template = "Incompatible type for arg no. {n}: Got \"{got}\", expected \"{expected}\""
+headline = "argument {n} has type `{got}` but `{expected}` is expected"
+label = "this argument's type is wrong"
+help = ["convert argument {n} to `{expected}`, or widen the parameter's type"]
+
+[[message]]
+template = "Illegal type conversion: {from} to {to}"
+headline = "illegal conversion from `{from}` to `{to}`"
+help = ["use an explicit conversion such as `Integer(x)`"]
+
+[[message]]
+template = "Operator is not overloaded: \"{operator}\""
+headline = "`{operator}` is not defined for these operand types"
+label = "no operator overload matches"
+help = [
+    "use a different operator or convert the operands first",
+    "or add an operator overload for the type",
+]
+
+[[message]]
+template = "Can't determine which overloaded function to call"
+headline = "the call to `{name}` is ambiguous between overloads"
+label = "the argument types match more than one overload"
+help = [
+    "convert an argument to the type of the overload you want",
+    "or rename the overloads so they differ",
+]
+
+[[message]]
+template = "Illegal qualifier"
+headline = "`{construct}` is not valid for this expression's type"
+label = "the value to the left is not a record, array, or pointer"
+help = [
+    "check that the left side has the fields or indexing you expect",
+    "if it is a pointer, dereference it first",
+]
+
+[[message]]
+template = "Unknown record field identifier \"{name}\""
+headline = "`{name}` is not a field of this record or class"
+label = "no such member"
+help = ["check the field name against the type declaration"]
+
+[[message]]
+template = "identifier idents no member \"{name}\""
+headline = "this value has no member `{name}`"
+label = "no such member on this type"
+help = ["check the member name, and the type you are calling it on"]
+
+[[message]]
+template = "Cannot access a private field of an object here"
+headline = "`{name}` is private and not visible from here"
+label = "private member accessed outside its unit"
+help = [
+    "add a public accessor to the class",
+    "or move this code into the unit that declares the class",
+]
+
+[[message]]
+template = "No matching implementation for interface method \"{name}\" found"
+headline = "no method implements interface method `{name}`"
+label = "the interface is declared but not satisfied"
+help = [
+    "add a method with exactly the declared parameters, result type and calling convention",
+    "or remove `{name}` from the interface's method list",
+]
+
+[[message]]
+template = "There is no method in an ancestor class to be overridden: \"{name}\""
+headline = "`{name}` is marked `override` but no ancestor declares it"
+label = "nothing to override"
+help = [
+    "remove `override`, or",
+    "add `virtual` to the ancestor's declaration",
+]
+
+[[message]]
+template = "Function header doesn't match the previous declaration \"{name}\""
+headline = "the implementation of `{name}` does not match its declaration"
+label = "parameter list or result type differs from the declaration"
+help = ["make the implementation's header identical to the declaration's"]
+
+[[message]]
+template = "Call by var for arg no. {n} has to match exactly: Got \"{got}\" expected \"{expected}\""
+headline = "`var` argument {n} must have exactly the type `{expected}`"
+label = "`var` parameters do not allow implicit conversions"
+help = [
+    "pass a variable of exactly `{expected}`",
+    "or copy the value into a local of that type and pass the local",
+]
+
+[[message]]
+template = "Syntax error, \"{token}\" expected but \"{found}\" found"
+headline = "expected `{token}` but found `{found}`"
+label = "unexpected token"
+help = ["check the statement for a missing or extra token"]
+
+[[message]]
+template = "range check error while evaluating constants ({value} must be between {min} and {max})"
+headline = "constant `{value}` is outside the range {min}..{max}"
+label = "the constant does not fit the target type"
+help = [
+    "correct the constant, or",
+    "widen the target type so it can hold `{value}`",
+]
+note = "this is a compile-time range violation, so no runtime check is involved"
+
+[[message]]
+template = "Overflow in arithmetic operation"
+headline = "constant arithmetic overflows this type"
+label = "the computed value does not fit"
+help = ["widen one operand before the operation, or correct the constant"]
+
+[[message]]
+template = "duplicate case label"
+headline = "this `case` label is already handled"
+label = "duplicate label or overlapping range"
+help = ["remove the duplicate branch", "or make the two ranges disjoint"]
+
+[[message]]
+template = "Constant and CASE types do not match"
+headline = "a `case` label has a different type from the selector"
+label = "label type differs from the `case` expression"
+help = ["use labels of the selector's type", "or convert the selector explicitly"]
+
+[[message]]
+template = "Comparison might be always false due to range of constant and expression"
+headline = "this comparison is always false"
+label = "the constant is outside the expression's range"
+help = ["check the constant and the operand's type", "or widen the operand so the comparison can succeed"]
+
+[[message]]
+template = "Mixing signed expressions and longwords gives a 64bit result"
+headline = "signed and unsigned operands force 64-bit arithmetic here"
+label = "mixed signedness widens the expression"
+help = [
+    "cast one operand so both sides have the same signedness",
+    "or keep it if the 64-bit result is intended",
+]
+
+[[message]]
+template = "Typecast has different size ({from} -> {to}) in assignment"
+headline = "cast from `{from}` to `{to}` changes the value's size"
+label = "sizes differ, so this cast is not an assignment-safe conversion"
+help = [
+    "use a conversion that preserves the value, such as `{to}(x)` on a compatible type",
+    "or convert through an intermediate of the same size",
+]
+
+[[message]]
+template = "Type size mismatch, possible loss of data / range check error"
+headline = "assignment narrows `{from}` to `{to}`"
+label = "the target type is smaller than the source"
+help = [
+    "convert explicitly so the truncation is deliberate",
+    "or widen the target's type",
+]
+
+[[message]]
+template = "Implicit string type conversion from \"{from}\" to \"{to}\""
+headline = "implicit string conversion from `{from}` to `{to}`"
+label = "string type crossed without an explicit conversion"
+help = [
+    "convert explicitly with the matching `UTF8Encode`/`UTF8Decode` call",
+    "or make both sides the same string type",
+]
+
+[[message]]
+template = "Implicit string type conversion with potential data loss from \"{from}\" to \"{to}\""
+headline = "implicit conversion from `{from}` to `{to}` can lose data"
+label = "characters may not survive this conversion"
+help = [
+    "convert explicitly and handle the characters that cannot be represented",
+    "or keep the value in `{from}` and convert only at the boundary",
+]
+
+[[message]]
+template = "Unicode constant cast with potential data loss"
+headline = "this Unicode constant may not fit the target codepage"
+label = "characters may be replaced or dropped"
+help = ["use a Unicode-capable target type, or verify the constant is ASCII"]
+
+[[message]]
+template = "Can't take the address of constant expressions"
+headline = "the address of a constant expression cannot be taken"
+label = "constants are not stored in memory"
+help = [
+    "assign it to a variable first",
+    "or declare it as a typed constant if its address is genuinely needed",
+]
+
+[[message]]
+template = "Can't assign values to const variable"
+headline = "`{name}` is `const` and cannot be assigned"
+label = "assignment to a read-only parameter or constant"
+help = [
+    "remove the assignment",
+    "or declare the parameter as `var` if the callee must modify it",
+]
+
+[[message]]
+template = "Illegal assignment to for-loop variable \"{name}\""
+headline = "the loop variable `{name}` is assigned inside the loop"
+label = "the loop counter is modified by the body"
+help = [
+    "use a separate variable for the value being computed",
+    "or rewrite as a `while` loop if the counter must change",
+]
+
+[[message]]
+template = "Exit with argument cannot be used here"
+headline = "`exit(value)` is not allowed in this block"
+label = "a `try`/`except`/`finally` block cannot return a value directly"
+help = ["assign `Result` and then call `exit` without an argument"]
+
+[[message]]
+template = "Creating an instance of abstract class \"{name}\""
+headline = "`{name}` is abstract and cannot be instantiated"
+label = "abstract class constructed"
+help = [
+    "instantiate a concrete descendant instead",
+    "or implement the missing abstract methods in `{name}`",
+]
+
+[[message]]
+template = "Constructing a class \"{name}\" with abstract method \"{method}\""
+headline = "`{name}` is created but `{method}` is still abstract"
+label = "calling this method will raise runtime error 211"
+help = ["override `{method}` in a descendant and construct that instead"]
+
+[[message]]
+template = "Instances of classes or objects with an abstract method are not allowed"
+headline = "class has an unimplemented abstract method"
+label = "abstract method not overridden"
+help = ["implement every abstract method before constructing the class"]
+
+[[message]]
+template = "Abstract methods shouldn't have any definition (with function body)"
+headline = "an abstract method is given a body"
+label = "abstract methods can only be declared"
+help = ["remove the body", "or drop `abstract` and override the method normally"]
+
+[[message]]
+template = "Virtual methods are used without a constructor in \"{name}\""
+headline = "`{name}` has virtual methods but no constructor"
+label = "the virtual method table is never initialised"
+help = ["add a constructor that calls `inherited Create`"]
+
+[[message]]
+template = "Can't open include file \"{name}\""
+headline = "cannot open include file `{name}`"
+label = "included file not found"
+help = [
+    "check the path in the `{{$I ...}}` directive",
+    "or add the include directory to `[fpc] units` in fpcheck.toml",
+]
+
+[[message]]
+template = "Can't open file \"{name}\""
+headline = "cannot open `{name}`"
+label = "file not found or not readable"
+help = ["check that the file exists and the path is correct"]
+
+[[message]]
+template = "unreachable code"
+headline = "this code can never run"
+label = "control flow cannot reach this statement"
+help = ["delete the dead code", "or remove the statement that ends the path early"]
+
+[[message]]
+template = "Runtime error 201 at {address}"
+headline = "range check failed at runtime"
+label = "a value was outside the range of its type"
+help = [
+    "find the assignment or argument that produced the out-of-range value",
+    "or widen the type if the full range is legitimate",
+]
+
+[[message]]
+template = "Runtime error 215 at {address}"
+headline = "arithmetic overflow at runtime"
+label = "an integer operation exceeded its type's range"
+help = ["widen the operands before the operation", "or check the inputs' bounds"]
+
+[[message]]
+template = "An unhandled exception occurred at {address}"
+headline = "an exception reached the top level unhandled"
+label = "no `except` block caught this exception"
+help = [
+    "handle the exception where it can be recovered from",
+    "or let it propagate deliberately and document why",
+]
