@@ -17,6 +17,7 @@ pub mod explain;
 pub mod fix;
 pub mod fpc;
 pub mod lexer;
+pub mod mcp;
 pub mod render;
 pub mod source;
 

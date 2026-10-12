@@ -424,6 +424,20 @@ Ship an `AGENTS.md` (or `CLAUDE.md`) snippet with `fpcheck init --agent`:
 
 A single stable command plus a stable output format is what makes the loop reliable; avoid adding modes the agent must choose between.
 
+### 12.1 MCP server (adapter)
+
+`fpcheck mcp` serves the Model Context Protocol on stdio, for harnesses that can call an MCP server but cannot conveniently run shell commands. It is an **adapter over section 12, not an alternative to it**: the CLI loop remains canonical, and the server must call the same core functions and reuse the same renderers, so the two front ends cannot report different things.
+
+- **Transport.** Newline-delimited JSON-RPC 2.0 on stdin/stdout; stdout carries protocol messages and nothing else. Logs, if any, go to stderr. The server exits `0` when the client closes stdin.
+- **Capabilities.** `tools` and `resources`. No `prompts`, `logging`, or `sampling`.
+- **Tools.** Exactly three, each a form over an existing core function:
+  - `check` → `check`/`build` (analyzer + `fpc`; `no_fpc` selects analyzer-only). Text content is `--message-format=llm`; `structuredContent` (revision `2025-06-18` onward) is the full, uncapped diagnostic set plus the versioned summary of section 5.2. This is the *only* mode choice, and it exists because a machine may have no compiler.
+  - `fix` → `fix`, with `dry_run`.
+  - `explain` → `explain`.
+- **Resources.** `fpcheck://catalog/lints`, `fpcheck://catalog/fpc`, and `fpcheck://explain/{code}` (also a resource template, so the ~955 compiler codes are reachable without being listed). Resources serve the same catalog and the same `explain::render` output as the CLI.
+- **Errors.** A protocol-level failure (unknown method or tool, bad arguments, missing resource) is a JSON-RPC error. A *tool execution* failure (no compiler, unknown diagnostic code) is a normal result with `isError: true`, so the agent can read the message and adapt.
+- **No fifth format.** The diagnostic model and the four renderers are the only presentations. Tool output wraps them; it does not reinterpret them.
+
 ## 13. Testing the tool itself
 
 1. **UI tests** (as in rustc): `tests/ui/*.pas` with expected `*.stderr` golden files in the human format and expected JSON for a subset. Every lint has at least: one failing case, one passing case, one tricky-flow case (exceptions, `exit`, loops, nested try).

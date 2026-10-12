@@ -112,8 +112,34 @@ pub enum Command {
         #[arg(long)]
         force: bool,
     },
+    /// Serve the Model Context Protocol over stdio (spec section 12.1)
+    Mcp,
     /// Language server (milestone M4)
     Lsp,
+}
+
+impl Cli {
+    /// A `Cli` with every global option at its CLI default, carrying `command`.
+    ///
+    /// Adapters that are not driven by argv — the MCP server — build on this and
+    /// then override the options their caller supplied. A test pins these
+    /// defaults to clap's, so the two cannot drift.
+    pub fn with_command(command: Command) -> Cli {
+        Cli {
+            command,
+            config: None,
+            message_format: "human".to_string(),
+            max_diagnostics: 15,
+            profile: "dev".to_string(),
+            deny: Vec::new(),
+            warn: Vec::new(),
+            allow: Vec::new(),
+            deny_warnings: false,
+            color: false,
+            package: None,
+            paths: Vec::new(),
+        }
+    }
 }
 
 /// Parse arguments, run, and translate the result into an exit code.
@@ -144,6 +170,7 @@ pub fn run(cli: Cli) -> Result<i32> {
             Ok(0)
         }
         Command::Init { agent, force } => init(&cli, *agent, *force),
+        Command::Mcp => crate::mcp::serve_stdio(&cli),
         Command::Test => Err(Error::Usage(
             "`fpcheck test` is not implemented yet: it needs an FPC toolchain for the FPCUnit \
              runner and heaptrc parsing (milestone M2)"
@@ -283,7 +310,45 @@ fn resolve_against(root: &Path, path: &str) -> String {
 // check / build
 // ---------------------------------------------------------------------------
 
-fn check(cli: &Cli, mode: FpcMode, no_fpc: bool, report_allows: bool) -> Result<i32> {
+/// Everything `check`/`build` computes, before any of it is printed.
+///
+/// The MCP server consumes this directly, so the adapter and the CLI render the
+/// same diagnostics with the same renderer and cannot drift apart.
+#[derive(Debug)]
+pub struct CheckRun {
+    pub diagnostics: Vec<Diagnostic>,
+    /// The files that were analyzed.
+    pub files: Vec<PathBuf>,
+    /// True when the compiler aborted rather than reporting ordinary errors.
+    pub fatal: bool,
+    /// Diagnostics removed by `{@allow(...)}`.
+    pub suppressed_by_allow: usize,
+    /// Output of the selected renderer at the selected `--message-format`.
+    pub rendered: String,
+    pub exit_code: i32,
+}
+
+/// The project view an adapter needs to render explanations: where the project
+/// root is and which catalog is in effect.
+#[derive(Debug, Clone)]
+pub struct SessionContext {
+    pub root: PathBuf,
+    pub catalog: Catalog,
+}
+
+/// Resolve config + catalog for `cli` without checking anything.
+pub fn session_context(cli: &Cli) -> Result<SessionContext> {
+    let session = Session::load(cli)?;
+    Ok(SessionContext {
+        root: session.root,
+        catalog: session.catalog,
+    })
+}
+
+/// Run the analyzer (and `fpc`, unless `no_fpc`) and render the result.
+///
+/// Printing is the caller's job: `check` prints, the MCP server wraps.
+pub fn run_check(cli: &Cli, mode: FpcMode, no_fpc: bool) -> Result<CheckRun> {
     let session = Session::load(cli)?;
     let roots = source_roots(cli, &session);
     let files = analyzer::collect_sources(&roots)?;
@@ -327,26 +392,35 @@ fn check(cli: &Cli, mode: FpcMode, no_fpc: bool, report_allows: bool) -> Result<
     }
 
     sort_diagnostics(&mut diagnostics);
-    let text = render::render(
+    let rendered = render::render(
         session.format,
         &diagnostics,
         &mut sources,
         &session.render_opts,
     );
-    if !text.is_empty() {
-        print!("{text}");
+    let exit_code = exit_code(&diagnostics, session.deny_warnings);
+    Ok(CheckRun {
+        diagnostics,
+        files,
+        fatal,
+        suppressed_by_allow,
+        rendered,
+        exit_code,
+    })
+}
+
+fn check(cli: &Cli, mode: FpcMode, no_fpc: bool, report_allows: bool) -> Result<i32> {
+    let run = run_check(cli, mode, no_fpc)?;
+    if !run.rendered.is_empty() {
+        print!("{}", run.rendered);
         let _ = std::io::stdout().flush();
     }
 
     if report_allows {
-        report_allows_for(&files, suppressed_by_allow)?;
+        report_allows_for(&run.files, run.suppressed_by_allow)?;
     }
 
-    if mode == FpcMode::Build && !fatal {
-        // Nothing extra to print: a successful build is silent, like cargo.
-    }
-
-    Ok(exit_code(&diagnostics, session.deny_warnings))
+    Ok(run.exit_code)
 }
 
 /// Which file to hand to fpc.
@@ -420,7 +494,36 @@ fn report_allows_for(files: &[PathBuf], suppressed: usize) -> Result<()> {
 // fix
 // ---------------------------------------------------------------------------
 
-fn fix(cli: &Cli, dry_run: bool) -> Result<i32> {
+/// Everything `fix` computes, before any of it is printed.
+#[derive(Debug)]
+pub struct FixRun {
+    pub fixes: Vec<crate::fix::FileFix>,
+    pub summary: String,
+    pub dry_run: bool,
+}
+
+impl FixRun {
+    pub fn changed_files(&self) -> Vec<&Path> {
+        self.fixes
+            .iter()
+            .filter(|f| f.changed())
+            .map(|f| f.path.as_path())
+            .collect()
+    }
+
+    pub fn applied(&self) -> usize {
+        self.fixes.iter().map(|f| f.applied).sum()
+    }
+
+    pub fn skipped(&self) -> usize {
+        self.fixes.iter().map(|f| f.skipped).sum()
+    }
+}
+
+/// Analyze, plan the `MachineApplicable` fixes, and apply them unless `dry_run`.
+///
+/// Printing is the caller's job: `fix` prints, the MCP server wraps.
+pub fn run_fix(cli: &Cli, dry_run: bool) -> Result<FixRun> {
     let session = Session::load(cli)?;
     let roots = source_roots(cli, &session);
     let files = analyzer::collect_sources(&roots)?;
@@ -435,12 +538,20 @@ fn fix(cli: &Cli, dry_run: bool) -> Result<i32> {
     if !dry_run {
         crate::fix::apply(&plan)?;
     }
-    println!("{}", crate::fix::summarize(&plan, dry_run));
-    if dry_run {
-        for file in &plan {
-            if file.changed() {
-                println!("--- {}", file.path.display());
-            }
+    let summary = crate::fix::summarize(&plan, dry_run);
+    Ok(FixRun {
+        fixes: plan,
+        summary,
+        dry_run,
+    })
+}
+
+fn fix(cli: &Cli, dry_run: bool) -> Result<i32> {
+    let run = run_fix(cli, dry_run)?;
+    println!("{}", run.summary);
+    if run.dry_run {
+        for path in run.changed_files() {
+            println!("--- {}", path.display());
         }
     }
     Ok(0)
@@ -650,6 +761,7 @@ mod tests {
     fn subcommands_parse() {
         assert!(matches!(parse(&["build"]).command, Command::Build));
         assert!(matches!(parse(&["test"]).command, Command::Test));
+        assert!(matches!(parse(&["mcp"]).command, Command::Mcp));
         assert!(matches!(parse(&["lsp"]).command, Command::Lsp));
         match parse(&["fix", "--dry-run"]).command {
             Command::Fix { dry_run } => assert!(dry_run),
@@ -679,6 +791,29 @@ mod tests {
             cli.paths,
             vec![PathBuf::from("src"), PathBuf::from("tests")]
         );
+    }
+
+    #[test]
+    fn with_command_matches_clap_defaults() {
+        // `Cli::with_command` is how the MCP server builds a request without
+        // argv; if clap's defaults change, this fails rather than the two front
+        // ends silently disagreeing.
+        let parsed = parse(&["check"]);
+        let built = Cli::with_command(Command::Check {
+            no_fpc: false,
+            report_allows: false,
+        });
+        assert_eq!(built.config, parsed.config);
+        assert_eq!(built.message_format, parsed.message_format);
+        assert_eq!(built.max_diagnostics, parsed.max_diagnostics);
+        assert_eq!(built.profile, parsed.profile);
+        assert_eq!(built.deny, parsed.deny);
+        assert_eq!(built.warn, parsed.warn);
+        assert_eq!(built.allow, parsed.allow);
+        assert_eq!(built.deny_warnings, parsed.deny_warnings);
+        assert_eq!(built.color, parsed.color);
+        assert_eq!(built.package, parsed.package);
+        assert_eq!(built.paths, parsed.paths);
     }
 
     #[test]

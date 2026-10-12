@@ -29,6 +29,20 @@ const EMBEDDED_FPC: &str = include_str!("../catalog/fpc.toml");
 const LINT_FILE: &str = "lints.toml";
 const FPC_FILE: &str = "fpc.toml";
 
+/// The lint catalog exactly as embedded in the binary.
+///
+/// The MCP server serves this as a resource (`fpcheck://catalog/lints`) when a
+/// project has no `catalog/lints.toml` of its own, so the reference data is the
+/// same bytes the analyzer uses.
+pub fn embedded_lint_text() -> &'static str {
+    EMBEDDED_LINTS
+}
+
+/// The compiler-message catalog exactly as embedded in the binary.
+pub fn embedded_fpc_text() -> &'static str {
+    EMBEDDED_FPC
+}
+
 /// One analyzer-lint catalog entry.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct LintEntry {

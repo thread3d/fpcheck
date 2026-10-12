@@ -40,6 +40,7 @@ cargo build --release
 ./target/release/fpcheck check --no-fpc   # analyzer only, no Free Pascal needed
 ./target/release/fpcheck explain F5000
 ./target/release/fpcheck fix              # apply MachineApplicable suggestions
+./target/release/fpcheck mcp              # Model Context Protocol server on stdio
 ```
 
 `check` invokes `fpc`; without a Free Pascal installation it fails with exit
@@ -99,6 +100,37 @@ FPCHECK_FPC=/opt/fpc/bin/fpc fpcheck check
 Suppression is `{@allow(CODE, reason: "...")}`; a missing `reason:` is itself an
 error, and `--report-allows` lists every suppression for review.
 
+**MCP server (spec section 12.1)**
+
+`fpcheck mcp` speaks newline-delimited JSON-RPC 2.0 on stdio, for agents whose
+harness can call MCP servers but not (or not conveniently) run shell commands.
+It is a **thin adapter, not a second implementation**: every request path calls
+the same core functions the CLI calls, so the two front ends cannot drift.
+
+| Tool | Core it calls | Notes |
+|---|---|---|
+| `check` | `cli::run_check` | Text content is byte-identical to `fpcheck check --message-format=llm`; `structuredContent` (from revision `2025-06-18` on) carries every diagnostic, uncapped, plus the versioned summary the JSON renderer uses. |
+| `fix` | `cli::run_fix` | Applies `MachineApplicable` suggestions; `dry_run` reports without writing. |
+| `explain` | `explain::render` | The tool-shaped form of the resource below. |
+
+Resources serve the reference data: `fpcheck://catalog/lints`,
+`fpcheck://catalog/fpc`, and `fpcheck://explain/{code}` (also exposed as a
+resource template, so any of the ~955 compiler codes is reachable without
+listing all of them). They read the project catalog the analyzer uses and call
+the same `explain::render`, so a resource can never say something
+`fpcheck explain` would not.
+
+Two transport guarantees are tested: **stdout carries protocol messages only**
+(every line is exercised as JSON in `tests/mcp.rs`), and a *tool execution*
+failure — a missing compiler, an unknown code — comes back as a normal result
+with `isError: true` rather than a transport error, so the agent can read the
+message and adapt.
+
+`fpcheck mcp` is additive: `fpcheck check` remains the canonical loop. The
+server holds no incremental cache yet (milestone M4), so it resolves config and
+the catalog per call; the adapter is structured to host that cache when it
+lands.
+
 ## Verification against the real compiler
 
 The compiler is the authority for its own flags and messages, so both were
@@ -150,7 +182,9 @@ Three bugs were found this way and fixed, each of which made the tool
 - `rustlike.pas` is not written yet. Now that a compiler is available it can be
   built and tested, so this is no longer blocked — just not done.
 - Incremental caching, `infer --suggest`, fuzzing and the SARIF polish of M4 are
-  not implemented. `fmt` wraps `ptop`.
+  not implemented. `fmt` wraps `ptop`. In particular `fpcheck mcp` is not yet
+  backed by the incremental cache, so each tool call resolves config and the
+  catalog afresh.
 - **Known cascade limitation.** Suppression is textual: a follow-up error is
   dropped when it repeats the failed symbol. In the example above, `Add` is
   reported even though it is only unresolved because `with TStringList.Create`
@@ -169,6 +203,7 @@ Three bugs were found this way and fixed, each of which made the tool
 | `src/fpc/` | `profile` (flags), `runner` (invoke), `parser` (messages), `normalize` (spans, cascades) |
 | `src/analyzer/` | the lint registry and one module per lint family |
 | `src/render/` | `human`, `json`, `llm`, `sarif` |
+| `src/mcp/` | MCP stdio server: `protocol` (JSON-RPC), `tools`, `resources` |
 | `src/catalog.rs` | embedded catalog loader and message-template engine |
 | `src/config.rs` | `fpcheck.toml` parsing, profiles, per-unit strictness globs |
 | `src/fix.rs` | applying `MachineApplicable` suggestions |
@@ -176,12 +211,13 @@ Three bugs were found this way and fixed, each of which made the tool
 | `docs/` | long-form explanations, one per analyzer code |
 | `tools/gen_fpc_catalog.py` | regenerates `catalog/fpc.toml` from an installed FPC |
 | `tests/cli.rs` | end-to-end tests of the binary (no compiler needed) |
+| `tests/mcp.rs` | end-to-end tests of the MCP stdio server (no compiler needed) |
 | `tests/real_fpc.rs` | tests that drive a real compiler (skipped without one) |
 
 ## Development
 
 ```sh
-cargo test        # 297 tests
+cargo test        # 345 tests
 cargo build
 ```
 

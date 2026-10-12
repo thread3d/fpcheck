@@ -16,7 +16,7 @@ a build dependency of it.
 
 ```sh
 cargo build          # builds target/debug/fpcheck
-cargo test           # 297 unit + integration tests
+cargo test           # 345 unit + integration tests
 cargo fmt            # formatting is enforced; keep `cargo fmt --check` clean
 ```
 
@@ -48,3 +48,10 @@ overlay in that script and regenerate.
   cannot decide, it stays silent.
 - Behaviour that depends on the compiler (flags, message wording, ids) must be
   verified against a real compiler, not assumed: add it to `tests/real_fpc.rs`.
+- `fpcheck mcp` (`src/mcp/`) is a **thin adapter**: it must call the same core
+  functions the CLI calls (`cli::run_check`, `cli::run_fix`, `explain::render`)
+  and reuse the existing renderers, so the two front ends cannot drift. Never put
+  checking or rendering logic in the MCP layer — extend the core and call it.
+  `check` keeps exactly one mode choice (`no_fpc`); do not add a tool per
+  diagnostic kind. Protocol and transport tests live in `tests/mcp.rs`, including
+  the guarantee that stdout carries protocol messages only.
