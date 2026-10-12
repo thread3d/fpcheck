@@ -59,9 +59,23 @@ impl RawFpcMessage {
         matches!(self.kind, RawKind::Diagnostic | RawKind::Fatal)
     }
 
-    /// FPC's closing summary line, which is not itself a diagnostic.
-    pub fn is_abort_summary(&self) -> bool {
-        self.kind == RawKind::Fatal && self.text.trim().eq_ignore_ascii_case("compilation aborted")
+    /// FPC's closing summary, which is not itself a diagnostic.
+    ///
+    /// Two forms exist:
+    ///
+    /// * `Fatal: (1018) Compilation aborted`
+    /// * `demo.pas(17) Fatal: (10026) There were 4 errors compiling module, stopping`
+    ///
+    /// The second reports a **basename** even under `-vb`, so keeping it would
+    /// put an unresolvable path into the results as well as duplicating a count
+    /// the individual diagnostics already carry.
+    pub fn is_compile_summary(&self) -> bool {
+        if self.kind != RawKind::Fatal {
+            return false;
+        }
+        let text = self.text.trim();
+        text.eq_ignore_ascii_case("compilation aborted")
+            || (text.starts_with("There were") && text.contains("errors compiling module"))
     }
 }
 
@@ -217,24 +231,39 @@ mod tests {
         let m = parse_line("src/lexer.pas(84,5) Error: Identifier not found \"tkString\"");
         assert_eq!(m.kind, RawKind::Diagnostic);
         assert_eq!(m.severity, Some(Level::Error));
-        assert_eq!(m.file.as_deref(), Some(std::path::Path::new("src/lexer.pas")));
+        assert_eq!(
+            m.file.as_deref(),
+            Some(std::path::Path::new("src/lexer.pas"))
+        );
         assert_eq!((m.line, m.col), (84, 5));
         assert_eq!(m.text, "Identifier not found \"tkString\"");
-        assert_eq!(m.raw, "src/lexer.pas(84,5) Error: Identifier not found \"tkString\"");
+        assert_eq!(
+            m.raw,
+            "src/lexer.pas(84,5) Error: Identifier not found \"tkString\""
+        );
     }
 
     #[test]
     fn parses_every_severity_word() {
-        assert_eq!(parse_line("a.pas(1,1) Warning: w").severity, Some(Level::Warning));
+        assert_eq!(
+            parse_line("a.pas(1,1) Warning: w").severity,
+            Some(Level::Warning)
+        );
         assert_eq!(parse_line("a.pas(1,1) Note: n").severity, Some(Level::Note));
         assert_eq!(parse_line("a.pas(1,1) Hint: h").severity, Some(Level::Help));
         assert_eq!(parse_line("a.pas(1,1) Fatal: f").kind, RawKind::Fatal);
-        assert_eq!(parse_line("a.pas(1,1) Fatal: f").severity, Some(Level::Error));
+        assert_eq!(
+            parse_line("a.pas(1,1) Fatal: f").severity,
+            Some(Level::Error)
+        );
     }
 
     #[test]
     fn severity_word_is_case_insensitive() {
-        assert_eq!(parse_line("a.pas(1,1) error: e").severity, Some(Level::Error));
+        assert_eq!(
+            parse_line("a.pas(1,1) error: e").severity,
+            Some(Level::Error)
+        );
     }
 
     #[test]
@@ -249,15 +278,24 @@ mod tests {
         let m = parse_line("Fatal: Compilation aborted");
         assert_eq!(m.kind, RawKind::Fatal);
         assert!(m.file.is_none());
-        assert!(m.is_abort_summary());
+        assert!(m.is_compile_summary());
     }
 
     #[test]
-    fn abort_summary_is_recognized_and_real_fatals_are_diagnostics() {
-        assert!(parse_line("Fatal: Compilation aborted").is_abort_summary());
+    fn compile_summaries_are_recognized_and_real_fatals_are_diagnostics() {
+        assert!(parse_line("Fatal: Compilation aborted").is_compile_summary());
+        assert!(parse_line(
+            "a.pas(9) Fatal: (10026) There were 3 errors compiling module, stopping"
+        )
+        .is_compile_summary());
         let other = parse_line("Fatal: Cannot open file \"x\"");
         assert!(other.is_diagnostic());
-        assert!(!other.is_abort_summary());
+        assert!(!other.is_compile_summary());
+    }
+
+    #[test]
+    fn a_non_fatal_message_is_never_a_summary() {
+        assert!(!parse_line("a.pas(1,1) Error: There were problems").is_compile_summary());
     }
 
     #[test]
@@ -286,12 +324,27 @@ mod tests {
 
     #[test]
     fn classifies_banner_and_progress_lines() {
-        assert_eq!(parse_line("Free Pascal Compiler version 3.2.2 [2021/05/16] for x86_64").kind, RawKind::Banner);
-        assert_eq!(parse_line("Copyright (c) 1993-2021 by Florian Klaempfl and others").kind, RawKind::Banner);
-        assert_eq!(parse_line("Target OS: Darwin for x86_64").kind, RawKind::Banner);
-        assert_eq!(parse_line("Compiling src/lexer.pas").kind, RawKind::Progress);
+        assert_eq!(
+            parse_line("Free Pascal Compiler version 3.2.2 [2021/05/16] for x86_64").kind,
+            RawKind::Banner
+        );
+        assert_eq!(
+            parse_line("Copyright (c) 1993-2021 by Florian Klaempfl and others").kind,
+            RawKind::Banner
+        );
+        assert_eq!(
+            parse_line("Target OS: Darwin for x86_64").kind,
+            RawKind::Banner
+        );
+        assert_eq!(
+            parse_line("Compiling src/lexer.pas").kind,
+            RawKind::Progress
+        );
         assert_eq!(parse_line("Linking mdiscd").kind, RawKind::Progress);
-        assert_eq!(parse_line("12 lines compiled, 0.1 sec").kind, RawKind::Progress);
+        assert_eq!(
+            parse_line("12 lines compiled, 0.1 sec").kind,
+            RawKind::Progress
+        );
     }
 
     #[test]
@@ -331,7 +384,7 @@ Fatal: Compilation aborted
         assert_eq!(msgs[3].kind, RawKind::Progress);
         assert_eq!(msgs[4].kind, RawKind::Diagnostic);
         assert_eq!(msgs[5].kind, RawKind::Fatal);
-        assert!(msgs[6].is_abort_summary());
+        assert!(msgs[6].is_compile_summary());
     }
 
     #[test]

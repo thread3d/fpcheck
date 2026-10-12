@@ -173,7 +173,10 @@ pub struct Profiles {
 
 impl Default for Profiles {
     fn default() -> Self {
-        Profiles { dev: ProfileConfig::dev(), release: ProfileConfig::release() }
+        Profiles {
+            dev: ProfileConfig::dev(),
+            release: ProfileConfig::release(),
+        }
     }
 }
 
@@ -220,7 +223,10 @@ pub struct LlmConfig {
 
 impl Default for LlmConfig {
     fn default() -> Self {
-        LlmConfig { max_diagnostics: 15, context_lines: 2 }
+        LlmConfig {
+            max_diagnostics: 15,
+            context_lines: 2,
+        }
     }
 }
 
@@ -295,7 +301,9 @@ impl Config {
                 }
             } else {
                 let s = value.as_str().ok_or_else(|| {
-                    Error::config(format!("[lints] `{key}` must be \"deny\", \"warn\", or \"allow\""))
+                    Error::config(format!(
+                        "[lints] `{key}` must be \"deny\", \"warn\", or \"allow\""
+                    ))
                 })?;
                 lint_levels.insert(key.to_ascii_uppercase(), LevelSetting::parse(s)?);
             }
@@ -313,8 +321,8 @@ impl Config {
     }
 
     pub fn load(path: &Path) -> Result<Self> {
-        let text = std::fs::read_to_string(path)
-            .map_err(|e| Error::io(path.display().to_string(), e))?;
+        let text =
+            std::fs::read_to_string(path).map_err(|e| Error::io(path.display().to_string(), e))?;
         let mut cfg = Config::from_str(&text)?;
         cfg.root = path.parent().map(|p| p.to_path_buf());
         Ok(cfg)
@@ -540,13 +548,19 @@ context_lines   = 3
         )
         .unwrap();
         assert_eq!(c.strictness_for(Path::new("src/a.pas")), Strictness::Strict);
-        assert_eq!(c.strictness_for(Path::new("src/legacy/a.pas")), Strictness::Lenient);
+        assert_eq!(
+            c.strictness_for(Path::new("src/legacy/a.pas")),
+            Strictness::Lenient
+        );
     }
 
     #[test]
     fn unannotated_units_default_to_lenient() {
         let c = Config::defaults();
-        assert_eq!(c.strictness_for(Path::new("whatever.pas")), Strictness::Lenient);
+        assert_eq!(
+            c.strictness_for(Path::new("whatever.pas")),
+            Strictness::Lenient
+        );
     }
 
     #[test]
@@ -594,7 +608,11 @@ context_lines   = 3
         let dir = tempfile::tempdir().unwrap();
         let nested = dir.path().join("a/b");
         std::fs::create_dir_all(&nested).unwrap();
-        std::fs::write(dir.path().join(CONFIG_FILE_NAME), "[package]\nname = \"up\"\n").unwrap();
+        std::fs::write(
+            dir.path().join(CONFIG_FILE_NAME),
+            "[package]\nname = \"up\"\n",
+        )
+        .unwrap();
         let c = Config::discover(&nested).unwrap();
         assert_eq!(c.package.name, "up");
         assert_eq!(c.root.as_deref(), Some(dir.path()));

@@ -47,8 +47,8 @@ pub fn plan(diags: &[Diagnostic]) -> Result<Vec<FileFix>> {
 
     let mut out = Vec::new();
     for (path, edits) in by_file {
-        let original = std::fs::read_to_string(&path)
-            .map_err(|e| Error::io(path.display().to_string(), e))?;
+        let original =
+            std::fs::read_to_string(&path).map_err(|e| Error::io(path.display().to_string(), e))?;
         let file = SourceFile::new(&path, original.clone());
 
         let mut ranges: Vec<(usize, usize, String)> = Vec::new();
@@ -93,7 +93,13 @@ pub fn plan(diags: &[Diagnostic]) -> Result<Vec<FileFix>> {
             applied += 1;
         }
 
-        out.push(FileFix { path, original, fixed, applied, skipped });
+        out.push(FileFix {
+            path,
+            original,
+            fixed,
+            applied,
+            skipped,
+        });
     }
 
     Ok(out)
@@ -136,7 +142,12 @@ mod tests {
         path
     }
 
-    fn diag_with(path: &std::path::Path, span: Span, replacement: &str, applicability: Applicability) -> Diagnostic {
+    fn diag_with(
+        path: &std::path::Path,
+        span: Span,
+        replacement: &str,
+        applicability: Applicability,
+    ) -> Diagnostic {
         let mut d = Diagnostic::new(
             "P0702",
             Level::Error,
@@ -147,7 +158,10 @@ mod tests {
         d.suggestions.push(Suggestion {
             applicability,
             message: "qualify the access".into(),
-            edits: vec![Edit { span, replacement: replacement.to_string() }],
+            edits: vec![Edit {
+                span,
+                replacement: replacement.to_string(),
+            }],
         });
         let _ = path;
         d
@@ -181,8 +195,18 @@ mod tests {
     fn several_edits_in_one_file_keep_their_offsets() {
         let dir = tempfile::tempdir().unwrap();
         let path = write_file(dir.path(), "a.pas", "aa bb cc\n");
-        let first = diag_with(&path, Span::new(&path, 1, 1, 1, 3), "XX", Applicability::MachineApplicable);
-        let second = diag_with(&path, Span::new(&path, 1, 7, 1, 9), "ZZ", Applicability::MachineApplicable);
+        let first = diag_with(
+            &path,
+            Span::new(&path, 1, 1, 1, 3),
+            "XX",
+            Applicability::MachineApplicable,
+        );
+        let second = diag_with(
+            &path,
+            Span::new(&path, 1, 7, 1, 9),
+            "ZZ",
+            Applicability::MachineApplicable,
+        );
 
         let plan = plan(&[first, second]).unwrap();
         assert_eq!(plan[0].fixed, "XX bb ZZ\n", "{}", plan[0].fixed);
@@ -193,8 +217,18 @@ mod tests {
     fn overlapping_edits_skip_the_later_one() {
         let dir = tempfile::tempdir().unwrap();
         let path = write_file(dir.path(), "a.pas", "abcdef\n");
-        let wide = diag_with(&path, Span::new(&path, 1, 1, 1, 7), "WIDE", Applicability::MachineApplicable);
-        let narrow = diag_with(&path, Span::new(&path, 1, 3, 1, 5), "NARROW", Applicability::MachineApplicable);
+        let wide = diag_with(
+            &path,
+            Span::new(&path, 1, 1, 1, 7),
+            "WIDE",
+            Applicability::MachineApplicable,
+        );
+        let narrow = diag_with(
+            &path,
+            Span::new(&path, 1, 3, 1, 5),
+            "NARROW",
+            Applicability::MachineApplicable,
+        );
 
         let plan = plan(&[wide, narrow]).unwrap();
         assert_eq!(plan[0].applied, 1);
@@ -237,11 +271,24 @@ mod tests {
     fn summarize_reports_applied_and_skipped() {
         let dir = tempfile::tempdir().unwrap();
         let path = write_file(dir.path(), "a.pas", "abcdef\n");
-        let wide = diag_with(&path, Span::new(&path, 1, 1, 1, 7), "WIDE", Applicability::MachineApplicable);
-        let narrow = diag_with(&path, Span::new(&path, 1, 3, 1, 5), "NARROW", Applicability::MachineApplicable);
+        let wide = diag_with(
+            &path,
+            Span::new(&path, 1, 1, 1, 7),
+            "WIDE",
+            Applicability::MachineApplicable,
+        );
+        let narrow = diag_with(
+            &path,
+            Span::new(&path, 1, 3, 1, 5),
+            "NARROW",
+            Applicability::MachineApplicable,
+        );
         let plan = plan(&[wide, narrow]).unwrap();
         let text = summarize(&plan, true);
-        assert!(text.contains("would apply 1 edit(s) in 1 file(s)"), "{text}");
+        assert!(
+            text.contains("would apply 1 edit(s) in 1 file(s)"),
+            "{text}"
+        );
         assert!(text.contains("skipped 1"), "{text}");
     }
 
@@ -250,8 +297,18 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let a = write_file(dir.path(), "a.pas", "aa\n");
         let b = write_file(dir.path(), "b.pas", "bb\n");
-        let da = diag_with(&a, Span::new(&a, 1, 1, 1, 3), "AA", Applicability::MachineApplicable);
-        let db = diag_with(&b, Span::new(&b, 1, 1, 1, 3), "BB", Applicability::MachineApplicable);
+        let da = diag_with(
+            &a,
+            Span::new(&a, 1, 1, 1, 3),
+            "AA",
+            Applicability::MachineApplicable,
+        );
+        let db = diag_with(
+            &b,
+            Span::new(&b, 1, 1, 1, 3),
+            "BB",
+            Applicability::MachineApplicable,
+        );
         let plan = plan(&[da, db]).unwrap();
         assert_eq!(plan.len(), 2);
         assert_eq!(apply(&plan).unwrap(), 2);

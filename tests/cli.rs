@@ -102,7 +102,9 @@ fn llm_format_reports_every_lint_and_the_summary_line() {
     let (code, out) = project.run(&["check", "--no-fpc", "--message-format=llm", "demo.pas"]);
 
     assert_eq!(code, 1, "errors must exit 1\n{out}");
-    for expected in ["P0304", "P0702", "P0701", "P0801", "P0306", "P0703", "P0902"] {
+    for expected in [
+        "P0304", "P0702", "P0701", "P0801", "P0306", "P0703", "P0902",
+    ] {
         assert!(out.contains(expected), "missing {expected} in:\n{out}");
     }
     assert!(
@@ -201,7 +203,10 @@ fn allow_flag_silences_a_code() {
 
     let (_, after) = project.run(&["check", "--no-fpc", "--allow=P0702", "demo.pas"]);
     assert!(!after.contains("P0702"), "{after}");
-    assert!(after.contains("P0701"), "other lints must survive:\n{after}");
+    assert!(
+        after.contains("P0701"),
+        "other lints must survive:\n{after}"
+    );
 }
 
 #[test]
@@ -282,7 +287,10 @@ fn fix_dry_run_changes_nothing() {
     let (code, out) = project.run(&["fix", "--dry-run", "demo.pas"]);
     assert_eq!(code, 0, "{out}");
     assert!(out.contains("would apply"), "{out}");
-    assert!(project.read("demo.pas").contains("{$R-}"), "dry run must not write");
+    assert!(
+        project.read("demo.pas").contains("{$R-}"),
+        "dry run must not write"
+    );
 }
 
 #[test]
@@ -309,7 +317,10 @@ fn init_agent_writes_the_snippet() {
     let (code, _) = project.run(&["init", "--agent"]);
     assert_eq!(code, 0);
     let agents = project.read("AGENTS.md");
-    assert!(agents.contains("fpcheck check --message-format=llm"), "{agents}");
+    assert!(
+        agents.contains("fpcheck check --message-format=llm"),
+        "{agents}"
+    );
     assert!(agents.contains("fpcheck explain <code>"), "{agents}");
 }
 
@@ -317,7 +328,10 @@ fn init_agent_writes_the_snippet() {
 fn a_directory_argument_is_walked_recursively() {
     let project = Project::new(&[
         ("src/a.pas", CLEAN),
-        ("src/nested/b.pas", "{$mode objfpc}\nunit b;\ninterface\nimplementation\nbegin\n  with X do Y;\nend.\n"),
+        (
+            "src/nested/b.pas",
+            "{$mode objfpc}\nunit b;\ninterface\nimplementation\nbegin\n  with X do Y;\nend.\n",
+        ),
     ]);
     let (code, out) = project.run(&["check", "--no-fpc", "src"]);
     assert_eq!(code, 1, "{out}");
@@ -367,8 +381,14 @@ fn config_lint_levels_are_honoured() {
 #[test]
 fn per_unit_strictness_globs_do_not_break_analysis() {
     let project = Project::new(&[
-        ("legacy/a.pas", "{$mode objfpc}\nunit a;\ninterface\nimplementation\nbegin\n  with X do Y;\nend.\n"),
-        ("fpcheck.toml", "[lints.per-unit]\n\"legacy/**\" = \"lenient\"\n\"src/**\" = \"strict\"\n"),
+        (
+            "legacy/a.pas",
+            "{$mode objfpc}\nunit a;\ninterface\nimplementation\nbegin\n  with X do Y;\nend.\n",
+        ),
+        (
+            "fpcheck.toml",
+            "[lints.per-unit]\n\"legacy/**\" = \"lenient\"\n\"src/**\" = \"strict\"\n",
+        ),
     ]);
     let (code, out) = project.run(&["check", "--no-fpc", "legacy"]);
     // Strictness does not disable the non-annotation lints, so P0702 still fires.

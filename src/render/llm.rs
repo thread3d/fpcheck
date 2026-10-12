@@ -5,7 +5,9 @@
 //! output, and a unified diff for every suggestion that can be applied.
 
 use crate::diagnostic::Diagnostic;
-use crate::render::{applicability_str, expand_tabs, render_suggestion_diff, summarize, visible, RenderOptions};
+use crate::render::{
+    applicability_str, expand_tabs, render_suggestion_diff, summarize, visible, RenderOptions,
+};
 use crate::source::SourceManager;
 
 pub fn render(diags: &[Diagnostic], sources: &mut SourceManager, opts: &RenderOptions) -> String {
@@ -93,9 +95,17 @@ fn render_excerpt(
     for (line, text) in &texts {
         let in_span = *line >= d.primary.line_start && *line <= d.primary.line_end;
         let marker = if in_span { '>' } else { ' ' };
-        out.push_str(&format!("{marker}{:>width$} | {text}\n", line, width = width));
+        out.push_str(&format!(
+            "{marker}{:>width$} | {text}\n",
+            line,
+            width = width
+        ));
         if in_span {
-            let start = if *line == d.primary.line_start { d.primary.col_start } else { 1 };
+            let start = if *line == d.primary.line_start {
+                d.primary.col_start
+            } else {
+                1
+            };
             let end = if *line == d.primary.line_end {
                 d.primary.col_end
             } else {

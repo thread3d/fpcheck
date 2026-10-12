@@ -26,7 +26,13 @@ impl Span {
         line_end: u32,
         col_end: u32,
     ) -> Self {
-        Span { file: file.into(), line_start, col_start, line_end, col_end }
+        Span {
+            file: file.into(),
+            line_start,
+            col_start,
+            line_end,
+            col_end,
+        }
     }
 
     /// A zero-width position, as FPC reports. Callers expand this to a real
@@ -60,7 +66,13 @@ impl Span {
             } else {
                 (other.line_end, other.col_end)
             };
-        Some(Span::new(self.file.clone(), line_start, col_start, line_end, col_end))
+        Some(Span::new(
+            self.file.clone(),
+            line_start,
+            col_start,
+            line_end,
+            col_end,
+        ))
     }
 
     pub fn file_name(&self) -> String {
@@ -72,7 +84,12 @@ impl Span {
 
     /// `file:line:col`, the form the spec requires in every renderer.
     pub fn location(&self) -> String {
-        format!("{}:{}:{}", self.file.display(), self.line_start, self.col_start)
+        format!(
+            "{}:{}:{}",
+            self.file.display(),
+            self.line_start,
+            self.col_start
+        )
     }
 }
 
@@ -134,7 +151,10 @@ impl Applicability {
     /// Both `MachineApplicable` and `MaybeIncorrect` suggestions are rendered
     /// as diffs in `--message-format=llm` (spec section 5.3).
     pub fn renders_as_diff(self) -> bool {
-        matches!(self, Applicability::MachineApplicable | Applicability::MaybeIncorrect)
+        matches!(
+            self,
+            Applicability::MachineApplicable | Applicability::MaybeIncorrect
+        )
     }
 }
 
@@ -160,7 +180,11 @@ pub struct Suggestion {
 
 impl Suggestion {
     pub fn machine(message: impl Into<String>, edits: Vec<Edit>) -> Self {
-        Suggestion { applicability: Applicability::MachineApplicable, message: message.into(), edits }
+        Suggestion {
+            applicability: Applicability::MachineApplicable,
+            message: message.into(),
+            edits,
+        }
     }
 }
 
@@ -221,12 +245,20 @@ impl Diagnostic {
     }
 
     /// An analyzer lint, the common case.
-    pub fn lint(code: impl Into<String>, level: Level, message: impl Into<String>, primary: Span) -> Self {
+    pub fn lint(
+        code: impl Into<String>,
+        level: Level,
+        message: impl Into<String>,
+        primary: Span,
+    ) -> Self {
         Diagnostic::new(code, level, message, primary, Source::Fpcheck)
     }
 
     pub fn with_label(mut self, span: Span, text: impl Into<String>) -> Self {
-        self.labels.push(Label { span, text: text.into() });
+        self.labels.push(Label {
+            span,
+            text: text.into(),
+        });
         self
     }
 
@@ -252,7 +284,9 @@ impl Diagnostic {
 
     /// True when a suggestion can be applied by `fpcheck fix` without review.
     pub fn machine_applicable(&self) -> impl Iterator<Item = &Suggestion> {
-        self.suggestions.iter().filter(|s| s.applicability.is_safe_to_apply())
+        self.suggestions
+            .iter()
+            .filter(|s| s.applicability.is_safe_to_apply())
     }
 
     /// The span a renderer should highlight: the widest of the primary span and
@@ -272,7 +306,12 @@ mod tests {
     use super::*;
 
     fn d() -> Diagnostic {
-        Diagnostic::lint("P0702", Level::Error, "`with` is banned", Span::new("a.pas", 3, 5, 3, 9))
+        Diagnostic::lint(
+            "P0702",
+            Level::Error,
+            "`with` is banned",
+            Span::new("a.pas", 3, 5, 3, 9),
+        )
     }
 
     #[test]
@@ -290,7 +329,10 @@ mod tests {
         let a = Span::point("a.pas", 2, 9);
         let b = Span::new("a.pas", 2, 3, 4, 1);
         let u = a.union(&b).unwrap();
-        assert_eq!((u.line_start, u.col_start, u.line_end, u.col_end), (2, 3, 4, 1));
+        assert_eq!(
+            (u.line_start, u.col_start, u.line_end, u.col_end),
+            (2, 3, 4, 1)
+        );
     }
 
     #[test]
@@ -304,7 +346,10 @@ mod tests {
     fn levels_sort_errors_first() {
         let mut v = vec![Level::Help, Level::Error, Level::Warning, Level::Note];
         v.sort_by_key(|l| l.rank());
-        assert_eq!(v, vec![Level::Error, Level::Warning, Level::Note, Level::Help]);
+        assert_eq!(
+            v,
+            vec![Level::Error, Level::Warning, Level::Note, Level::Help]
+        );
     }
 
     #[test]
@@ -330,7 +375,10 @@ mod tests {
         let s = Suggestion {
             applicability: Applicability::MachineApplicable,
             message: "add else".into(),
-            edits: vec![Edit { span: Span::point("a.pas", 1, 1), replacement: "else".into() }],
+            edits: vec![Edit {
+                span: Span::point("a.pas", 1, 1),
+                replacement: "else".into(),
+            }],
         };
         let json = serde_json::to_string(&s).unwrap();
         assert!(json.contains("\"MachineApplicable\""), "{}", json);

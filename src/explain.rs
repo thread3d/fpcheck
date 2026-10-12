@@ -13,7 +13,9 @@ use std::path::Path;
 pub fn render(code: &str, catalog: &Catalog, docs_dir: &Path) -> Result<String> {
     let code = code.trim().to_ascii_uppercase();
     if code.is_empty() {
-        return Err(Error::Usage("`fpcheck explain` needs a diagnostic code".into()));
+        return Err(Error::Usage(
+            "`fpcheck explain` needs a diagnostic code".into(),
+        ));
     }
 
     let mut out = String::new();
@@ -38,13 +40,13 @@ pub fn render(code: &str, catalog: &Catalog, docs_dir: &Path) -> Result<String> 
     if let Some(rule) = catalog.message_by_code(&code) {
         found = true;
         out.push_str(&format!("{code}: normalized FPC compiler message\n\n"));
-        out.push_str(&format!("  matches: {}\n", rule.template.render_literal()));
-        out.push_str(&format!("  message: {}\n", rule.headline.render_literal()));
+        out.push_str(&format!("  matches: {}\n", rule.template.display()));
+        out.push_str(&format!("  message: {}\n", rule.headline.display()));
         for help in &rule.help {
-            out.push_str(&format!("  help: {}\n", help.render_literal()));
+            out.push_str(&format!("  help: {}\n", help.display()));
         }
         if let Some(note) = &rule.note {
-            out.push_str(&format!("  note: {}\n", note.render_literal()));
+            out.push_str(&format!("  note: {}\n", note.display()));
         }
         out.push('\n');
     }
@@ -52,8 +54,8 @@ pub fn render(code: &str, catalog: &Catalog, docs_dir: &Path) -> Result<String> 
     let doc = docs_dir.join(format!("{code}.md"));
     if doc.is_file() {
         found = true;
-        let text = std::fs::read_to_string(&doc)
-            .map_err(|e| Error::io(doc.display().to_string(), e))?;
+        let text =
+            std::fs::read_to_string(&doc).map_err(|e| Error::io(doc.display().to_string(), e))?;
         out.push_str(&text);
         if !out.ends_with('\n') {
             out.push('\n');
@@ -124,10 +126,16 @@ mod tests {
     }
 
     #[test]
-    fn a_generated_code_with_only_a_doc_file_still_explains() {
+    fn a_code_with_only_a_doc_file_still_explains() {
+        let c = catalog();
+        // Must genuinely be absent from both catalogues, or the summary would
+        // be printed first.
+        assert!(c.message_by_code("F99998").is_none());
+        assert!(c.lint("F99998").is_none());
+
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("F5025.md"), "explanation body\n").unwrap();
-        let text = render("F5025", &catalog(), dir.path()).unwrap();
+        std::fs::write(dir.path().join("F99998.md"), "explanation body\n").unwrap();
+        let text = render("F99998", &c, dir.path()).unwrap();
         assert_eq!(text, "explanation body\n");
     }
 
@@ -136,11 +144,14 @@ mod tests {
         let c = catalog();
         let code = c
             .match_message("Identifier not found \"x\"")
-            .expect("seed message")
+            .expect("catalogue entry")
             .code;
+        assert_eq!(code, "F5000");
         let text = render(&code, &c, Path::new("/nonexistent")).unwrap();
         assert!(text.contains("normalized FPC compiler message"), "{text}");
-        assert!(text.contains("Identifier not found"), "{text}");
+        // The template is shown with its placeholder visible, not substituted.
+        assert!(text.contains("Identifier not found \"{p1}\""), "{text}");
+        assert!(text.contains("undeclared identifier"), "{text}");
     }
 
     #[test]

@@ -41,7 +41,8 @@ impl NormalizeOptions {
     }
 
     pub fn with_override(mut self, code: &str, setting: LevelSetting) -> Self {
-        self.level_overrides.insert(code.to_ascii_uppercase(), setting);
+        self.level_overrides
+            .insert(code.to_ascii_uppercase(), setting);
         self
     }
 
@@ -79,9 +80,9 @@ pub fn normalize(
         }
         if raw.kind == RawKind::Fatal {
             out.fatal = true;
-            // "Compilation aborted" is a summary of the errors already reported,
-            // not a diagnostic of its own.
-            if raw.is_abort_summary() {
+            // "Compilation aborted" and "There were N errors..." summarise the
+            // errors already reported; they are not diagnostics of their own.
+            if raw.is_compile_summary() {
                 continue;
             }
         }
@@ -101,22 +102,45 @@ pub fn normalize(
 
         // Cascade suppression: this message may exist only because an earlier
         // root cause failed. Report the cause, drop the symptom.
+        //
+        // `<erroneous type>` is FPC's own marker for a value whose type it could
+        // not determine *because* an earlier error occurred, so a message
+        // carrying it is always a cascade. It is only suppressed once something
+        // has already been reported, so a lone such line is never swallowed.
+        if is_erroneous_cascade(text)
+            && (!root_symbols.is_empty()
+                || !out.diagnostics.is_empty()
+                || out.suppressed_cascades > 0)
+        {
+            out.suppressed_cascades += 1;
+            continue;
+        }
         if root_symbols.iter().any(|s| mentions_symbol(text, s)) {
             out.suppressed_cascades += 1;
             continue;
         }
 
-        let match_ = opts.catalog.match_message(text);
+        // The compiler's own message number is the stable code. Both profiles
+        // request `-vq`, so ids are present in practice; deriving a code from the
+        // text is only the fallback for output that carries no id.
         let code = match &raw.fpc_id {
-            // The spec's code shape is `F` + the compiler's message number.
             Some(id) => format!("F{id}"),
-            None => match &match_ {
-                Some(m) => m.code.clone(),
-                None => Catalog::code_for_unmatched(text),
-            },
+            None => opts
+                .catalog
+                .match_message(text)
+                .map(|m| m.code)
+                .unwrap_or_else(|| Catalog::code_for_unmatched(text)),
         };
 
-        let setting = opts.level_overrides.get(&code.to_ascii_uppercase()).copied();
+        // Look the entry up by code and recover its arguments from the text. If
+        // there is no entry, or its template does not match this wording, `info`
+        // is empty and the raw compiler text is used - never a wrong headline.
+        let info = opts.catalog.describe(&code, text);
+
+        let setting = opts
+            .level_overrides
+            .get(&code.to_ascii_uppercase())
+            .copied();
         if setting == Some(LevelSetting::Allow) {
             continue;
         }
@@ -129,15 +153,22 @@ pub fn normalize(
         };
 
         let primary = match &raw.file {
-            Some(file) if raw.line > 0 => expand_span(file, raw.line, raw.col, sources, &mut token_cache),
-            Some(file) => Span::point(file.clone(), raw.line.max(1), raw.col.max(1)),
+            Some(file) if raw.line > 0 => {
+                let file = display_path(file, &opts.base);
+                expand_span(&file, raw.line, raw.col, sources, &mut token_cache)
+            }
+            Some(file) => Span::point(
+                display_path(file, &opts.base),
+                raw.line.max(1),
+                raw.col.max(1),
+            ),
             None => continue,
         };
 
         let mut diag = Diagnostic::new(
             code,
             level,
-            match &match_ {
+            match &info {
                 Some(m) => m.headline.clone(),
                 None => text.to_string(),
             },
@@ -145,7 +176,7 @@ pub fn normalize(
             Source::Fpc,
         );
         diag.fpc_raw = Some(raw.raw.clone());
-        if let Some(m) = &match_ {
+        if let Some(m) = &info {
             if let Some(label) = &m.label {
                 diag.labels.push(crate::diagnostic::Label {
                     span: diag.primary.clone(),
@@ -206,6 +237,35 @@ fn expand_span(
         Some(token) => token.span.clone(),
         None => Span::point(path.to_path_buf(), line, col),
     }
+}
+
+/// FPC's own marker for a value whose type it could not determine *because* an
+/// earlier error occurred.
+fn is_erroneous_cascade(text: &str) -> bool {
+    text.contains("erroneous type")
+}
+
+/// A compiler-reported path, made relative to the project root when it is inside
+/// it.
+///
+/// `-vb` makes FPC report absolute paths so they can always be resolved; this
+/// strips the root again so diagnostics stay readable, as rustc's do. Both the
+/// literal and the canonicalized root are tried, because on macOS the compiler
+/// resolves symlinks (`/tmp` becomes `/private/tmp`) while the configured root
+/// may not be resolved.
+fn display_path(path: &Path, base: &Path) -> PathBuf {
+    if base.as_os_str().is_empty() {
+        return path.to_path_buf();
+    }
+    if let Ok(rest) = path.strip_prefix(base) {
+        return rest.to_path_buf();
+    }
+    if let Ok(canonical) = base.canonicalize() {
+        if let Ok(rest) = path.strip_prefix(&canonical) {
+            return rest.to_path_buf();
+        }
+    }
+    path.to_path_buf()
 }
 
 /// The symbol a message blames, when it is a cascade root cause.
@@ -301,7 +361,11 @@ mod tests {
     fn a_point_is_expanded_to_the_offending_token() {
         let (_d, mut sources, opts) = project();
         // Line 5 is "  Writeln(y);" so `y` starts at column 11.
-        let out = run("hello.pas(5,11) Error: Identifier not found \"y\"\n", &mut sources, &opts);
+        let out = run(
+            "hello.pas(5,11) Error: Identifier not found \"y\"\n",
+            &mut sources,
+            &opts,
+        );
         assert_eq!(out.diagnostics.len(), 1);
         let d = &out.diagnostics[0];
         assert_eq!((d.primary.line_start, d.primary.col_start), (5, 11));
@@ -313,14 +377,22 @@ mod tests {
     #[test]
     fn catalog_gives_a_clearer_headline_label_and_help() {
         let (_d, mut sources, opts) = project();
-        let out = run("hello.pas(5,11) Error: Identifier not found \"y\"\n", &mut sources, &opts);
+        let out = run(
+            "hello.pas(5,11) Error: Identifier not found \"y\"\n",
+            &mut sources,
+            &opts,
+        );
         let d = &out.diagnostics[0];
         assert_eq!(d.message, "undeclared identifier `y`");
         assert_eq!(d.labels.len(), 1);
         assert!(d.labels[0].text.contains("not found"));
         assert!(!d.help.is_empty());
         assert_eq!(d.source, Source::Fpc);
-        assert!(d.fpc_raw.as_deref().unwrap().contains("Identifier not found"));
+        assert!(d
+            .fpc_raw
+            .as_deref()
+            .unwrap()
+            .contains("Identifier not found"));
     }
 
     #[test]
@@ -329,7 +401,10 @@ mod tests {
         let raw = "hello.pas(5,3) Error: Some brand new compiler complaint\n";
         let a = run(raw, &mut sources, &opts);
         let b = run(raw, &mut sources, &opts);
-        assert_eq!(a.diagnostics[0].message, "Some brand new compiler complaint");
+        assert_eq!(
+            a.diagnostics[0].message,
+            "Some brand new compiler complaint"
+        );
         assert_eq!(a.diagnostics[0].code, b.diagnostics[0].code);
         assert!(a.diagnostics[0].code.starts_with('F'));
     }
@@ -337,14 +412,33 @@ mod tests {
     #[test]
     fn numeric_ids_win_over_derived_codes() {
         let (_d, mut sources, opts) = project();
+        // 5000 is the compiler's real number for "Identifier not found", which
+        // is what `-vq` makes FPC print.
         let out = run(
-            "hello.pas(5,11) Error: (5025) Identifier not found \"y\"\n",
+            "hello.pas(5,11) Error: (5000) Identifier not found \"y\"\n",
             &mut sources,
             &opts,
         );
-        assert_eq!(out.diagnostics[0].code, "F5025");
-        // The catalog still improves the message.
+        assert_eq!(out.diagnostics[0].code, "F5000");
+        // The catalogue still improves the message.
         assert_eq!(out.diagnostics[0].message, "undeclared identifier `y`");
+    }
+
+    #[test]
+    fn an_id_with_no_matching_wording_keeps_the_raw_text() {
+        let (_d, mut sources, opts) = project();
+        // Id 5000 paired with text from a different message: the code is still
+        // the real id, but the headline must not be invented from the entry.
+        let out = run(
+            "hello.pas(5,11) Error: (5000) something the catalogue does not know\n",
+            &mut sources,
+            &opts,
+        );
+        assert_eq!(out.diagnostics[0].code, "F5000");
+        assert_eq!(
+            out.diagnostics[0].message,
+            "something the catalogue does not know"
+        );
     }
 
     #[test]
@@ -358,7 +452,10 @@ hello.pas(6,3) Error: Incompatible types: got \"untyped\" expected \"LongInt\"
         let out = run(output, &mut sources, &opts);
         assert_eq!(out.suppressed_cascades, 1, "{:?}", out.diagnostics);
         assert_eq!(out.diagnostics.len(), 2);
-        assert!(out.diagnostics.iter().all(|d| !d.message.contains("`y`") || d.primary.line_start == 5));
+        assert!(out
+            .diagnostics
+            .iter()
+            .all(|d| !d.message.contains("`y`") || d.primary.line_start == 5));
     }
 
     #[test]
@@ -399,20 +496,23 @@ hello.pas(5,1) Error: bad
     }
 
     #[test]
-    fn the_abort_summary_is_not_emitted_but_marks_the_run_fatal() {
+    fn compile_summaries_are_not_emitted_but_mark_the_run_fatal() {
         let (_d, mut sources, opts) = project();
+        // Both closing forms are summaries of the errors already reported, so
+        // neither becomes a diagnostic; the run is still marked fatal.
         let output = "\
-hello.pas(5,11) Error: Identifier not found \"y\"
-hello.pas(6,1) Fatal: There were 1 errors compiling module, stopping
-Fatal: Compilation aborted
+hello.pas(5,11) Error: (5000) Identifier not found \"y\"
+hello.pas(6,1) Fatal: (10026) There were 1 errors compiling module, stopping
+Fatal: (1018) Compilation aborted
 ";
         let out = run(output, &mut sources, &opts);
         assert!(out.fatal);
-        assert_eq!(out.diagnostics.len(), 2);
-        assert!(!out
-            .diagnostics
-            .iter()
-            .any(|d| d.message.to_lowercase().contains("compilation aborted")));
+        assert_eq!(out.diagnostics.len(), 1, "{:?}", out.diagnostics);
+        assert_eq!(out.diagnostics[0].code, "F5000");
+        assert!(!out.diagnostics.iter().any(|d| {
+            let message = d.message.to_lowercase();
+            message.contains("compilation aborted") || message.contains("compiling module")
+        }));
     }
 
     #[test]
@@ -432,9 +532,9 @@ Linking hello
     #[test]
     fn allow_override_drops_a_diagnostic() {
         let (_d, mut sources, opts) = project();
-        let opts = opts.with_override("F5025", LevelSetting::Allow);
+        let opts = opts.with_override("F5000", LevelSetting::Allow);
         let out = run(
-            "hello.pas(5,11) Error: (5025) Identifier not found \"y\"\n",
+            "hello.pas(5,11) Error: (5000) Identifier not found \"y\"\n",
             &mut sources,
             &opts,
         );
@@ -444,9 +544,9 @@ Linking hello
     #[test]
     fn warn_override_downgrades_an_error() {
         let (_d, mut sources, opts) = project();
-        let opts = opts.with_override("F5025", LevelSetting::Warn);
+        let opts = opts.with_override("F5000", LevelSetting::Warn);
         let out = run(
-            "hello.pas(5,11) Error: (5025) Identifier not found \"y\"\n",
+            "hello.pas(5,11) Error: (5000) Identifier not found \"y\"\n",
             &mut sources,
             &opts,
         );
@@ -456,26 +556,32 @@ Linking hello
     #[test]
     fn deny_override_promotes_a_hint() {
         let (_d, mut sources, opts) = project();
-        let text = "Local variable \"x\" does not seem to be initialized";
-        let code = opts
-            .catalog
-            .match_message(text)
-            .map(|m| m.code)
-            .unwrap_or_else(|| Catalog::code_for_unmatched(text));
-        let opts = opts.with_override(&code, LevelSetting::Deny);
-        let output = format!("hello.pas(5,1) Hint: {text}\n");
-        let out = run(&output, &mut sources, &opts);
+        // 5037 is the real number for "Variable does not seem to be initialized",
+        // which FPC emits as a warning; promote it to an error.
+        let text = "Variable \"x\" does not seem to be initialized";
+        let out = run(
+            &format!("hello.pas(5,1) Warning: (5037) {text}\n"),
+            &mut sources,
+            &opts.with_override("F5037", LevelSetting::Deny),
+        );
+        assert_eq!(out.diagnostics[0].code, "F5037");
         assert_eq!(out.diagnostics[0].level, Level::Error);
     }
 
     #[test]
     fn mention_matching_needs_a_word_boundary_or_quotes() {
         // `untyped` contains a `y` but does not mention the symbol `y`.
-        assert!(!mentions_symbol("got \"untyped\" expected \"LongInt\"", "y"));
+        assert!(!mentions_symbol(
+            "got \"untyped\" expected \"LongInt\"",
+            "y"
+        ));
         assert!(mentions_symbol("Identifier not found \"y\"", "y"));
         assert!(mentions_symbol("cannot use y here", "y"));
-        assert!(mentions_symbol("Can't find unit SysUtils used by x", "SysUtils"));
-        assert!(!mentions_symbol("anything at all", "")); 
+        assert!(mentions_symbol(
+            "Can't find unit SysUtils used by x",
+            "SysUtils"
+        ));
+        assert!(!mentions_symbol("anything at all", ""));
     }
 
     #[test]
@@ -497,13 +603,23 @@ Linking hello
         let out = run("not/here.pas(3,2) Error: boom\n", &mut sources, &opts);
         assert_eq!(out.diagnostics.len(), 1);
         // Falls back to the raw point rather than dropping the diagnostic.
-        assert_eq!((out.diagnostics[0].primary.line_start, out.diagnostics[0].primary.col_start), (3, 2));
+        assert_eq!(
+            (
+                out.diagnostics[0].primary.line_start,
+                out.diagnostics[0].primary.col_start
+            ),
+            (3, 2)
+        );
     }
 
     #[test]
     fn a_column_zero_location_is_handled() {
         let (_d, mut sources, opts) = project();
-        let out = run("hello.pas(5) Error: Identifier not found \"y\"\n", &mut sources, &opts);
+        let out = run(
+            "hello.pas(5) Error: Identifier not found \"y\"\n",
+            &mut sources,
+            &opts,
+        );
         assert_eq!(out.diagnostics.len(), 1);
         let d = &out.diagnostics[0];
         assert_eq!(d.primary.line_start, 5);
@@ -523,5 +639,72 @@ Linking hello
         let out = run("", &mut sources, &opts);
         assert!(out.diagnostics.is_empty());
         assert!(!out.fatal);
+    }
+
+    #[test]
+    fn erroneous_type_cascades_are_suppressed_after_a_root_cause() {
+        let (_d, mut sources, opts) = project();
+        // 3079 is what FPC says when a `with` expression failed: the type is
+        // unknown because of the earlier error, so this is a cascade.
+        let output = "\
+hello.pas(5,11) Error: (5000) Identifier not found \"y\"
+hello.pas(5,20) Error: (3079) Expression type must be class or record type, got <erroneous type>
+";
+        let out = run(output, &mut sources, &opts);
+        assert_eq!(out.suppressed_cascades, 1);
+        assert_eq!(out.diagnostics.len(), 1, "{:?}", out.diagnostics);
+        assert_eq!(out.diagnostics[0].code, "F5000");
+    }
+
+    #[test]
+    fn an_erroneous_type_message_alone_is_not_swallowed() {
+        let (_d, mut sources, opts) = project();
+        // With nothing reported before it, an `<erroneous type>` message is all
+        // we have and must not be dropped.
+        let out = run(
+            "hello.pas(5,11) Error: (3079) Expression type must be class or record type, got <erroneous type>\n",
+            &mut sources,
+            &opts,
+        );
+        assert_eq!(out.diagnostics.len(), 1, "{:?}", out.diagnostics);
+    }
+
+    #[test]
+    fn absolute_paths_from_the_compiler_are_made_relative_to_the_root() {
+        assert_eq!(
+            display_path(Path::new("/proj/src/a.pas"), Path::new("/proj")),
+            PathBuf::from("src/a.pas")
+        );
+        assert_eq!(
+            display_path(Path::new("/elsewhere/a.pas"), Path::new("/proj")),
+            PathBuf::from("/elsewhere/a.pas")
+        );
+        assert_eq!(
+            display_path(Path::new("already/relative.pas"), Path::new("/proj")),
+            PathBuf::from("already/relative.pas")
+        );
+    }
+
+    #[test]
+    fn a_full_path_from_the_compiler_resolves_to_a_real_file() {
+        // `-vb` makes FPC report an absolute path; the normalizer strips the
+        // root so the span is readable *and* still loadable.
+        let (dir, mut sources, opts) = project();
+        let absolute = dir.path().join("hello.pas");
+        let output = format!(
+            "{}(5,11) Error: (5000) Identifier not found \"y\"\n",
+            absolute.display()
+        );
+        let out = run(&output, &mut sources, &opts);
+        assert_eq!(out.diagnostics.len(), 1);
+        let d = &out.diagnostics[0];
+        assert_eq!(
+            d.primary.file,
+            PathBuf::from("hello.pas"),
+            "{:?}",
+            d.primary
+        );
+        // Widened from the lexer, which proves the file was actually loaded.
+        assert_eq!((d.primary.col_start, d.primary.col_end), (11, 12));
     }
 }

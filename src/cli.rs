@@ -130,9 +130,10 @@ pub fn main_entry() -> i32 {
 
 pub fn run(cli: Cli) -> Result<i32> {
     match &cli.command {
-        Command::Check { no_fpc, report_allows } => {
-            check(&cli, FpcMode::CheckOnly, *no_fpc, *report_allows)
-        }
+        Command::Check {
+            no_fpc,
+            report_allows,
+        } => check(&cli, FpcMode::CheckOnly, *no_fpc, *report_allows),
         Command::Build => check(&cli, FpcMode::Build, false, false),
         Command::Fix { dry_run } => fix(&cli, *dry_run),
         Command::Fmt { check } => fmt(&cli, *check),
@@ -171,7 +172,16 @@ struct Session {
 
 impl Session {
     fn load(cli: &Cli) -> Result<Self> {
-        let config = load_config(cli)?;
+        let mut config = load_config(cli)?;
+        // `FPCHECK_FPC` wins over configuration, so a specific compiler can be
+        // forced; the real-compiler tests and CI use this to select one that is
+        // not on PATH.
+        if let Ok(binary) = std::env::var("FPCHECK_FPC") {
+            let binary = binary.trim();
+            if !binary.is_empty() {
+                config.fpc.binary = binary.to_string();
+            }
+        }
         let root = match &config.root {
             Some(root) => root.clone(),
             None => std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
@@ -231,7 +241,9 @@ fn load_config(cli: &Cli) -> Result<Config> {
             if p.is_dir() {
                 p.clone()
             } else {
-                p.parent().map(|d| d.to_path_buf()).unwrap_or_else(|| PathBuf::from("."))
+                p.parent()
+                    .map(|d| d.to_path_buf())
+                    .unwrap_or_else(|| PathBuf::from("."))
             }
         })
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
@@ -290,7 +302,10 @@ fn check(cli: &Cli, mode: FpcMode, no_fpc: bool, report_allows: bool) -> Result<
     if !no_fpc {
         if let Some(target) = target_source(cli, &session, &files) {
             let profile = fpc::build_profile(&session.config, session.profile_name);
-            let out_dir = session.root.join("target").join(session.profile_name.as_str());
+            let out_dir = session
+                .root
+                .join("target")
+                .join(session.profile_name.as_str());
             std::fs::create_dir_all(&out_dir)
                 .map_err(|e| Error::io(out_dir.display().to_string(), e))?;
             let extras = vec![
@@ -301,11 +316,9 @@ fn check(cli: &Cli, mode: FpcMode, no_fpc: bool, report_allows: bool) -> Result<
             let reported = relative_to(&target, &session.root);
             let output = fpc::run_fpc(&profile, &reported, mode, &extras, &session.root)?;
 
-            let normalize_opts = fpc::NormalizeOptions::new(
-                session.catalog.clone(),
-                session.root.clone(),
-            )
-            .with_overrides(session.overrides.clone());
+            let normalize_opts =
+                fpc::NormalizeOptions::new(session.catalog.clone(), session.root.clone())
+                    .with_overrides(session.overrides.clone());
             let raw = fpc::parse_output(&output.output);
             let normalized = fpc::normalize(&raw, &normalize_opts, &mut sources);
             fatal = normalized.fatal;
@@ -314,7 +327,12 @@ fn check(cli: &Cli, mode: FpcMode, no_fpc: bool, report_allows: bool) -> Result<
     }
 
     sort_diagnostics(&mut diagnostics);
-    let text = render::render(session.format, &diagnostics, &mut sources, &session.render_opts);
+    let text = render::render(
+        session.format,
+        &diagnostics,
+        &mut sources,
+        &session.render_opts,
+    );
     if !text.is_empty() {
         print!("{text}");
         let _ = std::io::stdout().flush();
@@ -343,7 +361,9 @@ fn target_source(cli: &Cli, session: &Session, files: &[PathBuf]) -> Option<Path
 }
 
 fn relative_to(path: &Path, base: &Path) -> PathBuf {
-    path.strip_prefix(base).map(|p| p.to_path_buf()).unwrap_or_else(|_| path.to_path_buf())
+    path.strip_prefix(base)
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|_| path.to_path_buf())
 }
 
 fn sort_diagnostics(diags: &mut [Diagnostic]) {
@@ -373,8 +393,8 @@ fn exit_code(diags: &[Diagnostic], deny_warnings: bool) -> i32 {
 fn report_allows_for(files: &[PathBuf], suppressed: usize) -> Result<()> {
     println!("suppressions: {suppressed}");
     for path in files {
-        let text = std::fs::read_to_string(path)
-            .map_err(|e| Error::io(path.display().to_string(), e))?;
+        let text =
+            std::fs::read_to_string(path).map_err(|e| Error::io(path.display().to_string(), e))?;
         let tokens = crate::lexer::tokenize(path, &text);
         for allow in analyzer::collect_allows(&tokens) {
             let codes = if allow.codes.is_empty() {
@@ -382,8 +402,15 @@ fn report_allows_for(files: &[PathBuf], suppressed: usize) -> Result<()> {
             } else {
                 allow.codes.join(", ")
             };
-            let reason = allow.reason.clone().unwrap_or_else(|| "<missing reason>".to_string());
-            println!("  {}:{}  {codes}  reason: {reason}", path.display(), allow.span.line_start);
+            let reason = allow
+                .reason
+                .clone()
+                .unwrap_or_else(|| "<missing reason>".to_string());
+            println!(
+                "  {}:{}  {codes}  reason: {reason}",
+                path.display(),
+                allow.span.line_start
+            );
         }
     }
     Ok(())
@@ -400,7 +427,8 @@ fn fix(cli: &Cli, dry_run: bool) -> Result<i32> {
 
     let mut diagnostics = Vec::new();
     for path in &files {
-        diagnostics.extend(analyzer::analyze_file(path, &session.analysis_options(path))?.diagnostics);
+        diagnostics
+            .extend(analyzer::analyze_file(path, &session.analysis_options(path))?.diagnostics);
     }
 
     let plan = crate::fix::plan(&diagnostics)?;
@@ -429,8 +457,8 @@ fn fmt(cli: &Cli, check_only: bool) -> Result<i32> {
 
     let mut changed = 0usize;
     for path in &files {
-        let original = std::fs::read_to_string(path)
-            .map_err(|e| Error::io(path.display().to_string(), e))?;
+        let original =
+            std::fs::read_to_string(path).map_err(|e| Error::io(path.display().to_string(), e))?;
         let formatted = run_filter("ptop", &original)?;
         if formatted != original {
             changed += 1;
@@ -516,7 +544,10 @@ fn init(_cli: &Cli, agent: bool, force: bool) -> Result<i32> {
     if agent {
         let agents_path = cwd.join("AGENTS.md");
         if agents_path.exists() && !force {
-            println!("left {} untouched (use --force to overwrite)", agents_path.display());
+            println!(
+                "left {} untouched (use --force to overwrite)",
+                agents_path.display()
+            );
         } else {
             std::fs::write(&agents_path, AGENT_SNIPPET)
                 .map_err(|e| Error::io(agents_path.display().to_string(), e))?;
@@ -569,14 +600,23 @@ mod tests {
     #[test]
     fn check_flags_parse() {
         let cli = parse(&["check"]);
-        assert!(matches!(cli.command, Command::Check { no_fpc: false, report_allows: false }));
+        assert!(matches!(
+            cli.command,
+            Command::Check {
+                no_fpc: false,
+                report_allows: false
+            }
+        ));
     }
 
     #[test]
     fn check_flag_variants_parse() {
         let cli = parse(&["check", "--no-fpc", "--report-allows"]);
         match cli.command {
-            Command::Check { no_fpc, report_allows } => {
+            Command::Check {
+                no_fpc,
+                report_allows,
+            } => {
                 assert!(no_fpc);
                 assert!(report_allows);
             }
@@ -635,7 +675,10 @@ mod tests {
     #[test]
     fn paths_are_positional() {
         let cli = parse(&["check", "src", "tests"]);
-        assert_eq!(cli.paths, vec![PathBuf::from("src"), PathBuf::from("tests")]);
+        assert_eq!(
+            cli.paths,
+            vec![PathBuf::from("src"), PathBuf::from("tests")]
+        );
     }
 
     #[test]
@@ -645,20 +688,38 @@ mod tests {
 
     #[test]
     fn exit_code_one_on_errors() {
-        let d = Diagnostic::new("P0702", Level::Error, "x", Span::point("a.pas", 1, 1), Source::Fpcheck);
+        let d = Diagnostic::new(
+            "P0702",
+            Level::Error,
+            "x",
+            Span::point("a.pas", 1, 1),
+            Source::Fpcheck,
+        );
         assert_eq!(exit_code(&[d], false), 1);
     }
 
     #[test]
     fn warnings_pass_unless_denied() {
-        let d = Diagnostic::new("P0703", Level::Warning, "x", Span::point("a.pas", 1, 1), Source::Fpcheck);
+        let d = Diagnostic::new(
+            "P0703",
+            Level::Warning,
+            "x",
+            Span::point("a.pas", 1, 1),
+            Source::Fpcheck,
+        );
         assert_eq!(exit_code(std::slice::from_ref(&d), false), 0);
         assert_eq!(exit_code(&[d], true), 1);
     }
 
     #[test]
     fn notes_never_fail_the_build() {
-        let d = Diagnostic::new("P0009", Level::Note, "x", Span::point("a.pas", 1, 1), Source::Fpcheck);
+        let d = Diagnostic::new(
+            "P0009",
+            Level::Note,
+            "x",
+            Span::point("a.pas", 1, 1),
+            Source::Fpcheck,
+        );
         assert_eq!(exit_code(&[d], true), 0);
     }
 

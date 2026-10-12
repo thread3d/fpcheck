@@ -9,7 +9,10 @@ use std::fmt;
 #[derive(Debug)]
 pub enum Error {
     /// I/O failure, with the path that caused it.
-    Io { path: String, source: std::io::Error },
+    Io {
+        path: String,
+        source: std::io::Error,
+    },
     /// Malformed or contradictory configuration.
     Config(String),
     /// A catalog file could not be read or parsed.
@@ -26,7 +29,10 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 impl Error {
     pub fn io(path: impl Into<String>, source: std::io::Error) -> Self {
-        Error::Io { path: path.into(), source }
+        Error::Io {
+            path: path.into(),
+            source,
+        }
     }
 
     pub fn config(msg: impl Into<String>) -> Self {

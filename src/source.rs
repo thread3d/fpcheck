@@ -27,7 +27,11 @@ impl SourceFile {
                 line_starts.push(i + 1);
             }
         }
-        SourceFile { path: path.into(), text, line_starts }
+        SourceFile {
+            path: path.into(),
+            text,
+            line_starts,
+        }
     }
 
     pub fn line_count(&self) -> usize {
@@ -93,7 +97,10 @@ impl SourceFile {
 
     /// Exact source text covered by a span, clamped to the file.
     pub fn snippet(&self, span: &Span) -> String {
-        let (Some(s), Some(e)) = (self.offset(span.line_start, span.col_start), self.offset(span.line_end, span.col_end)) else {
+        let (Some(s), Some(e)) = (
+            self.offset(span.line_start, span.col_start),
+            self.offset(span.line_end, span.col_end),
+        ) else {
             return String::new();
         };
         if e <= s {
@@ -107,7 +114,9 @@ impl SourceFile {
     pub fn context(&self, span: &Span, before: u32, after: u32) -> Vec<(u32, &str)> {
         let first = span.line_start.saturating_sub(before).max(1);
         let last = (span.line_end + after).min(self.line_count() as u32);
-        (first..=last).filter_map(|n| self.line(n).map(|t| (n, t))).collect()
+        (first..=last)
+            .filter_map(|n| self.line(n).map(|t| (n, t)))
+            .collect()
     }
 }
 
@@ -123,12 +132,18 @@ pub struct SourceManager {
 
 impl SourceManager {
     pub fn new() -> Self {
-        SourceManager { files: HashMap::new(), base: PathBuf::new() }
+        SourceManager {
+            files: HashMap::new(),
+            base: PathBuf::new(),
+        }
     }
 
     /// A manager that resolves relative paths against `base` (the project root).
     pub fn with_base(base: impl Into<PathBuf>) -> Self {
-        SourceManager { files: HashMap::new(), base: base.into() }
+        SourceManager {
+            files: HashMap::new(),
+            base: base.into(),
+        }
     }
 
     /// The on-disk path for a possibly-relative reported path.

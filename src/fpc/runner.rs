@@ -55,7 +55,12 @@ pub fn run_fpc(
     let mut argv = vec![profile.program.clone()];
     argv.extend(args);
 
-    Ok(FpcOutput { argv, status, success: status == Some(0), output })
+    Ok(FpcOutput {
+        argv,
+        status,
+        success: status == Some(0),
+        output,
+    })
 }
 
 /// Run, capturing both streams into one file so their order is preserved.
@@ -119,13 +124,27 @@ mod tests {
         let mut profile = crate::fpc::profile::build_profile(&cfg, ProfileName::Dev);
         profile.program = script.display().to_string();
 
-        let out = run_fpc(&profile, Path::new("hello.pas"), FpcMode::CheckOnly, &[], dir.path()).unwrap();
+        let out = run_fpc(
+            &profile,
+            Path::new("hello.pas"),
+            FpcMode::CheckOnly,
+            &[],
+            dir.path(),
+        )
+        .unwrap();
         assert!(!out.success);
         assert_eq!(out.status, Some(1));
         let banner = out.output.find("Free Pascal Compiler").expect("banner");
         let error = out.output.find("Identifier not found").expect("error");
-        let fatal = out.output.find("Fatal: Compilation aborted").expect("fatal");
-        assert!(banner < error && error < fatal, "order lost:\n{}", out.output);
+        let fatal = out
+            .output
+            .find("Fatal: Compilation aborted")
+            .expect("fatal");
+        assert!(
+            banner < error && error < fatal,
+            "order lost:\n{}",
+            out.output
+        );
     }
 
     #[cfg(unix)]
@@ -136,7 +155,14 @@ mod tests {
         let cfg = Config::defaults();
         let mut profile = crate::fpc::profile::build_profile(&cfg, ProfileName::Dev);
         profile.program = script.display().to_string();
-        let out = run_fpc(&profile, Path::new("a.pas"), FpcMode::Build, &[], dir.path()).unwrap();
+        let out = run_fpc(
+            &profile,
+            Path::new("a.pas"),
+            FpcMode::Build,
+            &[],
+            dir.path(),
+        )
+        .unwrap();
         assert_eq!(out.argv[0], profile.program);
         assert_eq!(out.argv.last().unwrap(), "a.pas");
         assert!(out.success);
@@ -150,8 +176,14 @@ mod tests {
         let cfg = Config::defaults();
         let mut profile = crate::fpc::profile::build_profile(&cfg, ProfileName::Dev);
         profile.program = script.display().to_string();
-        let out = run_fpc(&profile, Path::new("src/weird name.pas"), FpcMode::Build, &[], dir.path())
-            .unwrap();
+        let out = run_fpc(
+            &profile,
+            Path::new("src/weird name.pas"),
+            FpcMode::Build,
+            &[],
+            dir.path(),
+        )
+        .unwrap();
         assert!(out.output.contains("src/weird name.pas"), "{}", out.output);
     }
 
@@ -160,8 +192,14 @@ mod tests {
         let cfg = Config::defaults();
         let mut profile = crate::fpc::profile::build_profile(&cfg, ProfileName::Dev);
         profile.program = "fpcheck-no-such-compiler-binary".to_string();
-        let err = run_fpc(&profile, Path::new("a.pas"), FpcMode::Build, &[], Path::new("."))
-            .unwrap_err();
+        let err = run_fpc(
+            &profile,
+            Path::new("a.pas"),
+            FpcMode::Build,
+            &[],
+            Path::new("."),
+        )
+        .unwrap_err();
         assert!(matches!(err, Error::FpcNotFound(_)), "{err:?}");
         assert!(format!("{err}").contains("not found"), "{err}");
         assert_eq!(err.exit_code(), 2);

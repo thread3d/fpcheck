@@ -13,14 +13,11 @@ pub fn with_statement(ctx: &LintContext<'_>) -> Vec<Diagnostic> {
         .iter()
         .filter(|t| t.kind == TokKind::Keyword && t.eq_ignore_case("with"))
         .map(|t| {
-            Diagnostic::lint(
-                "P0702",
-                Level::Error,
-                "`with` is banned",
-                t.span.clone(),
-            )
-            .with_help("bind the target to a local variable and qualify field accesses explicitly")
-            .with_note("`with` hides which object a name belongs to")
+            Diagnostic::lint("P0702", Level::Error, "`with` is banned", t.span.clone())
+                .with_help(
+                    "bind the target to a local variable and qualify field accesses explicitly",
+                )
+                .with_note("`with` hides which object a name belongs to")
         })
         .collect()
 }
@@ -30,8 +27,13 @@ pub fn goto(ctx: &LintContext<'_>) -> Vec<Diagnostic> {
         .iter()
         .filter(|t| t.kind == TokKind::Keyword && t.eq_ignore_case("goto"))
         .map(|t| {
-            Diagnostic::lint("P0703", Level::Warning, "`goto` jumps out of the local flow", t.span.clone())
-                .with_help("restructure with `break`, `continue`, `exit`, or a nested routine")
+            Diagnostic::lint(
+                "P0703",
+                Level::Warning,
+                "`goto` jumps out of the local flow",
+                t.span.clone(),
+            )
+            .with_help("restructure with `break`, `continue`, `exit`, or a nested routine")
         })
         .collect()
 }
@@ -60,7 +62,10 @@ mod tests {
 
     #[test]
     fn with_inside_a_statement_is_found() {
-        assert_eq!(code("begin\n  if a then with B do C;\nend.\n", "P0702").len(), 1);
+        assert_eq!(
+            code("begin\n  if a then with B do C;\nend.\n", "P0702").len(),
+            1
+        );
     }
 
     #[test]
@@ -76,7 +81,11 @@ mod tests {
 
     #[test]
     fn with_in_a_comment_or_string_is_ignored() {
-        assert!(code("{ with Foo do }\nbegin\n  x := 'with Foo';\nend.\n", "P0702").is_empty());
+        assert!(code(
+            "{ with Foo do }\nbegin\n  x := 'with Foo';\nend.\n",
+            "P0702"
+        )
+        .is_empty());
     }
 
     #[test]

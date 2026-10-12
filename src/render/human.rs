@@ -5,7 +5,9 @@
 //! `= help:` for what to do.
 
 use crate::diagnostic::Diagnostic;
-use crate::render::{applicability_str, expand_tabs, render_suggestion_diff, visible, RenderOptions};
+use crate::render::{
+    applicability_str, expand_tabs, render_suggestion_diff, visible, RenderOptions,
+};
 use crate::source::SourceManager;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -22,7 +24,12 @@ pub fn render(diags: &[Diagnostic], sources: &mut SourceManager, opts: &RenderOp
 }
 
 fn render_one(d: &Diagnostic, sources: &mut SourceManager, opts: &RenderOptions, out: &mut String) {
-    out.push_str(&format!("{}[{}]: {}\n", d.level.as_str(), d.code, d.message));
+    out.push_str(&format!(
+        "{}[{}]: {}\n",
+        d.level.as_str(),
+        d.code,
+        d.message
+    ));
     out.push_str(&format!("  --> {}\n", d.primary.location()));
 
     // Every line that carries a span, so labels on other lines are shown too.
@@ -75,9 +82,7 @@ fn render_one(d: &Diagnostic, sources: &mut SourceManager, opts: &RenderOptions,
             let pad = " ".repeat(start.saturating_sub(1) as usize);
             let carets = "^".repeat(end.saturating_sub(start).max(1) as usize);
             let caption = label.map(|l| format!(" {l}")).unwrap_or_default();
-            out.push_str(&format!(
-                "{gutter} | {pad}{carets}{caption}\n"
-            ));
+            out.push_str(&format!("{gutter} | {pad}{carets}{caption}\n"));
         }
     }
 
@@ -122,7 +127,11 @@ fn underlines(d: &Diagnostic, line: u32, line_len: u32) -> Vec<(u32, u32, Option
     let primary = &d.primary;
 
     if line >= primary.line_start && line <= primary.line_end {
-        let start = if line == primary.line_start { primary.col_start } else { 1 };
+        let start = if line == primary.line_start {
+            primary.col_start
+        } else {
+            1
+        };
         let end = if line == primary.line_end {
             primary.col_end
         } else {
@@ -141,7 +150,11 @@ fn underlines(d: &Diagnostic, line: u32, line_len: u32) -> Vec<(u32, u32, Option
             continue;
         }
         if line >= label.span.line_start && line <= label.span.line_end {
-            let start = if line == label.span.line_start { label.span.col_start } else { 1 };
+            let start = if line == label.span.line_start {
+                label.span.col_start
+            } else {
+                1
+            };
             let end = if line == label.span.line_end {
                 label.span.col_end
             } else {

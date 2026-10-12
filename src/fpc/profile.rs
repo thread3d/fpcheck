@@ -103,6 +103,15 @@ pub fn build_profile(cfg: &Config, name: ProfileName) -> FpcProfile {
 
     // Warnings, notes, hints and info all on, so nothing is silently dropped.
     flags.push("-vewnhi".to_string());
+    // Message numbers. Verified against FPC 3.2.2, which then prints
+    // `Error: (5000) Identifier not found "x"`: that number is the stable `F`
+    // code, so `explain F5000` and `--allow=F5000` work on real output.
+    flags.push("-vq".to_string());
+    // Full paths in messages. Without `-vb`, FPC strips the directory and
+    // reports a bare `demo.pas`, which cannot be resolved back to
+    // `src/demo.pas` — so the renderer could not show the offending line.
+    // The normalizer strips the project root again for readable output.
+    flags.push("-vb".to_string());
 
     if !cfg.fpc.mode.is_empty() {
         flags.push(format!("-M{}", cfg.fpc.mode));
@@ -116,7 +125,11 @@ pub fn build_profile(cfg: &Config, name: ProfileName) -> FpcProfile {
 
     flags.extend(cfg.fpc.extra.iter().cloned());
 
-    FpcProfile { name, program: cfg.fpc.binary.clone(), flags }
+    FpcProfile {
+        name,
+        program: cfg.fpc.binary.clone(),
+        flags,
+    }
 }
 
 #[cfg(test)]
@@ -137,11 +150,32 @@ mod tests {
     fn dev_profile_is_the_strict_one() {
         let cfg = Config::defaults();
         let p = build_profile(&cfg, ProfileName::Dev);
-        for flag in ["-Cr", "-Co", "-Ci", "-Ct", "-CR", "-Sa", "-gh", "-O-"] {
-            assert!(p.flags.contains(&flag.to_string()), "missing {flag}: {:?}", p.flags);
+        for flag in [
+            "-Cr", "-Co", "-Ci", "-Ct", "-CR", "-Sa", "-gh", "-O-", "-vq", "-vb",
+        ] {
+            assert!(
+                p.flags.contains(&flag.to_string()),
+                "missing {flag}: {:?}",
+                p.flags
+            );
         }
         assert!(p.flags.contains(&"-Mobjfpc".to_string()));
         assert!(p.flags.contains(&"-vewnhi".to_string()));
+    }
+
+    #[test]
+    fn both_profiles_request_message_numbers() {
+        // Without `-vq` there are no numeric ids, and every compiler diagnostic
+        // would fall back to a code derived from its text.
+        let cfg = Config::defaults();
+        for name in [ProfileName::Dev, ProfileName::Release] {
+            let p = build_profile(&cfg, name);
+            assert!(
+                p.flags.contains(&"-vq".to_string()),
+                "{name:?}: {:?}",
+                p.flags
+            );
+        }
     }
 
     #[test]
@@ -159,7 +193,10 @@ mod tests {
     fn config_extra_is_appended_last() {
         let cfg = Config::from_str("[fpc]\nextra = [\"-Xs\", \"-vw\"]\n").unwrap();
         let p = build_profile(&cfg, ProfileName::Dev);
-        assert_eq!(&p.flags[p.flags.len() - 2..], &["-Xs".to_string(), "-vw".to_string()]);
+        assert_eq!(
+            &p.flags[p.flags.len() - 2..],
+            &["-Xs".to_string(), "-vw".to_string()]
+        );
     }
 
     #[test]
@@ -177,7 +214,9 @@ mod tests {
     #[test]
     fn debug_setting_selects_flags() {
         let dwarf = Config::from_str("[profile.dev]\ndebug = \"dwarf\"\n").unwrap();
-        assert!(build_profile(&dwarf, ProfileName::Dev).flags.contains(&"-gw".to_string()));
+        assert!(build_profile(&dwarf, ProfileName::Dev)
+            .flags
+            .contains(&"-gw".to_string()));
         let none = Config::from_str("[profile.dev]\ndebug = \"\"\n").unwrap();
         let p = build_profile(&none, ProfileName::Dev);
         assert!(!p.flags.contains(&"-g".to_string()));

@@ -14,7 +14,9 @@ pub fn empty_except(ctx: &LintContext<'_>) -> Vec<Diagnostic> {
         if !is_except(token) {
             continue;
         }
-        let Some((start, end)) = handler_body_range(ctx.tokens, index) else { continue };
+        let Some((start, end)) = handler_body_range(ctx.tokens, index) else {
+            continue;
+        };
         if significant_between(ctx.tokens, start, end).is_empty() {
             out.push(
                 Diagnostic::lint(
@@ -39,7 +41,9 @@ pub fn catch_all_except(ctx: &LintContext<'_>) -> Vec<Diagnostic> {
         if !is_except(token) {
             continue;
         }
-        let Some((start, end)) = handler_body_range(ctx.tokens, index) else { continue };
+        let Some((start, end)) = handler_body_range(ctx.tokens, index) else {
+            continue;
+        };
         let body = significant_between(ctx.tokens, start, end);
         // An empty handler is P0801's business, not P0802's.
         if body.is_empty() {
@@ -53,7 +57,8 @@ pub fn catch_all_except(ctx: &LintContext<'_>) -> Vec<Diagnostic> {
             continue;
         }
 
-        if body.iter().any(|t| t.eq_ignore_case("raise")) || body.iter().any(|t| looks_like_logging(t))
+        if body.iter().any(|t| t.eq_ignore_case("raise"))
+            || body.iter().any(|t| looks_like_logging(t))
         {
             continue;
         }
@@ -146,7 +151,10 @@ fn looks_like_logging(token: &Token) -> bool {
         return false;
     }
     let name = token.text.to_ascii_lowercase();
-    name.contains("log") || name.contains("trace") || name.contains("report") || name.starts_with("warn")
+    name.contains("log")
+        || name.contains("trace")
+        || name.contains("report")
+        || name.starts_with("warn")
 }
 
 #[cfg(test)]
@@ -165,20 +173,30 @@ mod tests {
 
     #[test]
     fn a_bare_empty_except_is_an_error() {
-        let diags = code("begin\n  try\n    Risky;\n  except\n  end;\nend.\n", "P0801");
+        let diags = code(
+            "begin\n  try\n    Risky;\n  except\n  end;\nend.\n",
+            "P0801",
+        );
         assert_eq!(diags.len(), 1);
         assert_eq!(diags[0].level, Level::Error);
     }
 
     #[test]
     fn an_except_with_only_a_comment_is_still_empty() {
-        let diags = code("begin\n  try\n    Risky;\n  except\n    { nothing }\n  end;\nend.\n", "P0801");
+        let diags = code(
+            "begin\n  try\n    Risky;\n  except\n    { nothing }\n  end;\nend.\n",
+            "P0801",
+        );
         assert_eq!(diags.len(), 1);
     }
 
     #[test]
     fn an_except_with_a_handler_is_not_empty() {
-        assert!(code("begin\n  try\n    Risky;\n  except\n    on E: EFoo do Handle(E);\n  end;\nend.\n", "P0801").is_empty());
+        assert!(code(
+            "begin\n  try\n    Risky;\n  except\n    on E: EFoo do Handle(E);\n  end;\nend.\n",
+            "P0801"
+        )
+        .is_empty());
     }
 
     #[test]
@@ -193,20 +211,30 @@ mod tests {
 
     #[test]
     fn a_bare_except_with_a_body_is_a_catch_all_warning() {
-        let diags = code("begin\n  try\n    Risky;\n  except\n    y := 0;\n  end;\nend.\n", "P0802");
+        let diags = code(
+            "begin\n  try\n    Risky;\n  except\n    y := 0;\n  end;\nend.\n",
+            "P0802",
+        );
         assert_eq!(diags.len(), 1);
         assert_eq!(diags[0].level, Level::Warning);
     }
 
     #[test]
     fn on_exception_is_a_catch_all_warning() {
-        let diags = code("begin\n  try\n    Risky;\n  except\n    on E: Exception do y := 0;\n  end;\nend.\n", "P0802");
+        let diags = code(
+            "begin\n  try\n    Risky;\n  except\n    on E: Exception do y := 0;\n  end;\nend.\n",
+            "P0802",
+        );
         assert_eq!(diags.len(), 1);
     }
 
     #[test]
     fn a_specific_exception_is_not_a_catch_all() {
-        assert!(code("begin\n  try\n    Risky;\n  except\n    on E: EMyError do y := 0;\n  end;\nend.\n", "P0802").is_empty());
+        assert!(code(
+            "begin\n  try\n    Risky;\n  except\n    on E: EMyError do y := 0;\n  end;\nend.\n",
+            "P0802"
+        )
+        .is_empty());
     }
 
     #[test]
@@ -230,7 +258,8 @@ mod tests {
 
     #[test]
     fn two_handlers_are_reported_separately() {
-        let text = "begin\n  try\n    A;\n  except\n  end;\n  try\n    B;\n  except\n  end;\nend.\n";
+        let text =
+            "begin\n  try\n    A;\n  except\n  end;\n  try\n    B;\n  except\n  end;\nend.\n";
         assert_eq!(code(text, "P0801").len(), 2);
     }
 
@@ -246,7 +275,8 @@ mod tests {
 
     #[test]
     fn repeat_until_inside_a_handler_does_not_end_it_early() {
-        let text = "begin\n  try\n    A;\n  except\n    repeat\n      B;\n    until Done;\n  end;\nend.\n";
+        let text =
+            "begin\n  try\n    A;\n  except\n    repeat\n      B;\n    until Done;\n  end;\nend.\n";
         assert!(code(text, "P0801").is_empty());
     }
 }

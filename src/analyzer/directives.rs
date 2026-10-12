@@ -15,7 +15,9 @@ pub fn checks_disabled(ctx: &LintContext<'_>) -> Vec<Diagnostic> {
         if token.kind != TokKind::Directive {
             continue;
         }
-        let Some((name, arg)) = token.directive_parts() else { continue };
+        let Some((name, arg)) = token.directive_parts() else {
+            continue;
+        };
 
         let arg_lower = arg.to_ascii_lowercase();
         let disabled = arg_lower == "-" || arg_lower == "off";
@@ -23,7 +25,9 @@ pub fn checks_disabled(ctx: &LintContext<'_>) -> Vec<Diagnostic> {
             continue;
         }
 
-        let Some(what) = check_name(&name) else { continue };
+        let Some(what) = check_name(&name) else {
+            continue;
+        };
         if in_unsafe_region(ctx.tokens, index) {
             continue;
         }
@@ -38,7 +42,10 @@ pub fn checks_disabled(ctx: &LintContext<'_>) -> Vec<Diagnostic> {
         .with_note("runtime checks are the safety net this project relies on")
         .with_suggestion(Suggestion::machine(
             format!("remove `{}` to re-enable {what}", token.text),
-            vec![Edit { span: token.span.clone(), replacement: String::new() }],
+            vec![Edit {
+                span: token.span.clone(),
+                replacement: String::new(),
+            }],
         ));
         out.push(diag);
     }
@@ -116,7 +123,11 @@ mod tests {
     fn the_message_names_the_directive_and_the_check() {
         let diags = run("{$R-}\nunit a; end.");
         assert!(diags[0].message.contains("{$R-}"), "{}", diags[0].message);
-        assert!(diags[0].message.contains("range checking"), "{}", diags[0].message);
+        assert!(
+            diags[0].message.contains("range checking"),
+            "{}",
+            diags[0].message
+        );
         assert!(!diags[0].help.is_empty());
     }
 

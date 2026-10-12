@@ -135,20 +135,108 @@ impl Token {
 /// that can appear as identifiers in some modes; being generous here is safe
 /// because lints match on text, not on this classification alone.
 pub const KEYWORDS: &[&str] = &[
-    "absolute", "abstract", "and", "array", "as", "asm", "assembler", "automated",
-    "begin", "case", "cdecl", "class", "const", "constructor", "destructor",
-    "dispinterface", "div", "do", "downto", "dynamic", "else", "end", "except",
-    "export", "exports", "external", "far", "file", "finalization", "finally",
-    "for", "forward", "function", "generic", "goto", "helper", "if",
-    "implementation", "in", "inherited", "initialization", "inline", "interface",
-    "interrupt", "is", "label", "library", "local", "message", "mod", "near",
-    "nil", "not", "object", "of", "on", "operator", "or", "out", "overload",
-    "override", "packed", "pascal", "platform", "private", "procedure", "program",
-    "property", "protected", "public", "published", "raise", "record", "reference",
-    "register", "reintroduce", "repeat", "resourcestring", "safecall", "sealed",
-    "set", "shl", "shr", "specialize", "static", "stdcall", "strict", "string",
-    "then", "threadvar", "to", "try", "type", "unit", "until", "uses", "var",
-    "varargs", "virtual", "while", "with", "xor",
+    "absolute",
+    "abstract",
+    "and",
+    "array",
+    "as",
+    "asm",
+    "assembler",
+    "automated",
+    "begin",
+    "case",
+    "cdecl",
+    "class",
+    "const",
+    "constructor",
+    "destructor",
+    "dispinterface",
+    "div",
+    "do",
+    "downto",
+    "dynamic",
+    "else",
+    "end",
+    "except",
+    "export",
+    "exports",
+    "external",
+    "far",
+    "file",
+    "finalization",
+    "finally",
+    "for",
+    "forward",
+    "function",
+    "generic",
+    "goto",
+    "helper",
+    "if",
+    "implementation",
+    "in",
+    "inherited",
+    "initialization",
+    "inline",
+    "interface",
+    "interrupt",
+    "is",
+    "label",
+    "library",
+    "local",
+    "message",
+    "mod",
+    "near",
+    "nil",
+    "not",
+    "object",
+    "of",
+    "on",
+    "operator",
+    "or",
+    "out",
+    "overload",
+    "override",
+    "packed",
+    "pascal",
+    "platform",
+    "private",
+    "procedure",
+    "program",
+    "property",
+    "protected",
+    "public",
+    "published",
+    "raise",
+    "record",
+    "reference",
+    "register",
+    "reintroduce",
+    "repeat",
+    "resourcestring",
+    "safecall",
+    "sealed",
+    "set",
+    "shl",
+    "shr",
+    "specialize",
+    "static",
+    "stdcall",
+    "strict",
+    "string",
+    "then",
+    "threadvar",
+    "to",
+    "try",
+    "type",
+    "unit",
+    "until",
+    "uses",
+    "var",
+    "varargs",
+    "virtual",
+    "while",
+    "with",
+    "xor",
 ];
 
 fn is_keyword(s: &str) -> bool {
@@ -377,12 +465,18 @@ impl<'a> Lexer<'a> {
                 self.bump();
             }
             let text = &self.src[start_pos..self.pos];
-            let kind = if is_keyword(text) { TokKind::Keyword } else { TokKind::Ident };
+            let kind = if is_keyword(text) {
+                TokKind::Keyword
+            } else {
+                TokKind::Ident
+            };
             return self.token(kind, start_line, start_col, start_pos);
         }
 
         // Symbols, longest match first.
-        const TWO: &[&str] = &[":=", "<=", ">=", "<>", "..", "**", "><", "+=", "-=", "*=", "/="];
+        const TWO: &[&str] = &[
+            ":=", "<=", ">=", "<>", "..", "**", "><", "+=", "-=", "*=", "/=",
+        ];
         if let Some(two) = TWO.iter().find(|t| self.src[self.pos..].starts_with(**t)) {
             for _ in 0..two.len() {
                 self.bump();
@@ -396,7 +490,13 @@ impl<'a> Lexer<'a> {
 
 /// Tokenize a whole file. The result always ends with a single `Eof` token.
 pub fn tokenize(path: &Path, src: &str) -> Vec<Token> {
-    let mut lx = Lexer { src, pos: 0, line: 1, col: 1, path: path.to_path_buf() };
+    let mut lx = Lexer {
+        src,
+        pos: 0,
+        line: 1,
+        col: 1,
+        path: path.to_path_buf(),
+    };
     let mut out = Vec::new();
     loop {
         let t = lx.next_token();
@@ -429,7 +529,9 @@ pub fn token_at(tokens: &[Token], line: u32, col: u32) -> Option<&Token> {
     }
     // The point landed inside a comment or directive: never highlight a
     // comment, report the construct that follows it instead.
-    let i = tokens.iter().position(|t| t.is_trivia() && covers(t, line, col))?;
+    let i = tokens
+        .iter()
+        .position(|t| t.is_trivia() && covers(t, line, col))?;
     tokens[i + 1..]
         .iter()
         .find(|t| !t.is_trivia() && t.kind != TokKind::Eof)
@@ -447,7 +549,9 @@ pub fn token_at_or_after(tokens: &[Token], line: u32, col: u32) -> Option<&Token
 
 /// Non-trivia tokens, i.e. the stream lints usually walk.
 pub fn significant(tokens: &[Token]) -> impl Iterator<Item = &Token> {
-    tokens.iter().filter(|t| !t.is_trivia() && t.kind != TokKind::Eof)
+    tokens
+        .iter()
+        .filter(|t| !t.is_trivia() && t.kind != TokKind::Eof)
 }
 
 #[cfg(test)]
@@ -527,7 +631,10 @@ mod tests {
     #[test]
     fn directive_parts_split_name_and_argument() {
         let t = lex("{$mode objfpc}{$R-}{$IFDEF FOO}");
-        assert_eq!(t[0].directive_parts(), Some(("MODE".into(), "objfpc".into())));
+        assert_eq!(
+            t[0].directive_parts(),
+            Some(("MODE".into(), "objfpc".into()))
+        );
         assert_eq!(t[1].directive_parts(), Some(("R".into(), "-".into())));
         assert_eq!(t[2].directive_parts(), Some(("IFDEF".into(), "FOO".into())));
     }
@@ -549,13 +656,21 @@ mod tests {
     #[test]
     fn range_after_integer_is_not_a_float() {
         let t = lex("1..5");
-        assert_eq!(t.iter().map(|t| t.text.as_str()).collect::<Vec<_>>(), vec!["1", "..", "5", ""]);
+        assert_eq!(
+            t.iter().map(|t| t.text.as_str()).collect::<Vec<_>>(),
+            vec!["1", "..", "5", ""]
+        );
     }
 
     #[test]
     fn numbers_of_every_base() {
-        assert_eq!(texts("$FF &17 %1010 1.5e3 42"), vec!["$FF", "&17", "%1010", "1.5e3", "42"]);
-        assert!(lex("$FF").iter().all(|t| t.kind != TokKind::Number || t.text == "$FF"));
+        assert_eq!(
+            texts("$FF &17 %1010 1.5e3 42"),
+            vec!["$FF", "&17", "%1010", "1.5e3", "42"]
+        );
+        assert!(lex("$FF")
+            .iter()
+            .all(|t| t.kind != TokKind::Number || t.text == "$FF"));
     }
 
     #[test]

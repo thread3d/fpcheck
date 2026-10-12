@@ -27,10 +27,10 @@ pub fn float_equality(ctx: &LintContext<'_>) -> Vec<Diagnostic> {
         let left = previous_significant(ctx.tokens, index);
         let right = next(ctx.tokens, index + 1).map(|(_, t)| t);
 
-        let offending = [left, right]
-            .into_iter()
-            .flatten()
-            .find(|t| is_float_literal(t) || (t.kind == TokKind::Ident && float_names.contains(&t.text.to_ascii_lowercase())));
+        let offending = [left, right].into_iter().flatten().find(|t| {
+            is_float_literal(t)
+                || (t.kind == TokKind::Ident && float_names.contains(&t.text.to_ascii_lowercase()))
+        });
 
         let Some(offending) = offending else { continue };
 
@@ -38,7 +38,10 @@ pub fn float_equality(ctx: &LintContext<'_>) -> Vec<Diagnostic> {
             Diagnostic::lint(
                 "P0306",
                 Level::Warning,
-                format!("floating-point value `{}` compared with `{}`", offending.text, token.text),
+                format!(
+                    "floating-point value `{}` compared with `{}`",
+                    offending.text, token.text
+                ),
                 token.span.clone(),
             )
             .with_label(offending.span.clone(), "floating-point operand")
@@ -199,7 +202,10 @@ mod tests {
 
     #[test]
     fn until_conditions_are_checked() {
-        assert_eq!(run("begin\n  repeat\n    y := 1;\n  until x = 0.5;\nend.\n").len(), 1);
+        assert_eq!(
+            run("begin\n  repeat\n    y := 1;\n  until x = 0.5;\nend.\n").len(),
+            1
+        );
     }
 
     #[test]

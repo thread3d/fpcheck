@@ -18,7 +18,9 @@ pub fn todo_marker(ctx: &LintContext<'_>) -> Vec<Diagnostic> {
         if token.kind != TokKind::Ident {
             continue;
         }
-        let Some(name) = MARKERS.iter().find(|m| token.eq_ignore_case(m)) else { continue };
+        let Some(name) = MARKERS.iter().find(|m| token.eq_ignore_case(m)) else {
+            continue;
+        };
 
         // Only a call counts; a mention in another identifier does not.
         let called = next_significant(ctx.tokens, index + 1)

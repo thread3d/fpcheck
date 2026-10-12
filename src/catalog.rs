@@ -113,7 +113,10 @@ impl Template {
         if !lit.is_empty() {
             parts.push(Part::Literal(lit));
         }
-        Template { parts, source: source.to_string() }
+        Template {
+            parts,
+            source: source.to_string(),
+        }
     }
 
     pub fn source(&self) -> &str {
@@ -189,6 +192,35 @@ impl Template {
     pub fn render_literal(&self) -> String {
         self.render(&BTreeMap::new())
     }
+
+    /// Render for documentation: literal braces are unescaped and placeholder
+    /// names stay visible (`Identifier not found "{p1}"`), unlike
+    /// [`Self::render`], which substitutes them with captured values.
+    pub fn display(&self) -> String {
+        let mut out = String::new();
+        for part in &self.parts {
+            match part {
+                Part::Literal(l) => out.push_str(l),
+                Part::Capture(name) => {
+                    out.push('{');
+                    out.push_str(name);
+                    out.push('}');
+                }
+            }
+        }
+        out
+    }
+
+    /// Number of literal characters, used to order templates by specificity.
+    pub fn literal_len(&self) -> usize {
+        self.parts
+            .iter()
+            .map(|p| match p {
+                Part::Literal(l) => l.chars().count(),
+                Part::Capture(_) => 0,
+            })
+            .sum()
+    }
 }
 
 /// A compiler-message rule resolved and ready to apply.
@@ -217,6 +249,20 @@ pub struct Catalog {
     lints: BTreeMap<String, LintEntry>,
     messages: Vec<MessageRule>,
     by_code: BTreeMap<String, usize>,
+    /// Indices into `messages`, most specific template first, for
+    /// [`Catalog::match_message`].
+    match_order: Vec<usize>,
+}
+
+/// Build the rendered form of a rule from captured values.
+fn render_rule(rule: &MessageRule, caps: &BTreeMap<String, String>) -> MessageMatch {
+    MessageMatch {
+        code: rule.code.clone(),
+        headline: rule.headline.render(caps),
+        label: rule.label.as_ref().map(|l| l.render(caps)),
+        help: rule.help.iter().map(|h| h.render(caps)).collect(),
+        note: rule.note.as_ref().map(|n| n.render(caps)),
+    }
 }
 
 impl Catalog {
@@ -235,10 +281,12 @@ impl Catalog {
             lints,
             messages: Vec::new(),
             by_code: BTreeMap::new(),
+            match_order: Vec::new(),
         };
         for raw in fpc.message {
             catalog.push_message(raw);
         }
+        catalog.rebuild_match_order();
         catalog
     }
 
@@ -268,9 +316,18 @@ impl Catalog {
             for raw in file.message {
                 catalog.push_message(raw);
             }
+            catalog.rebuild_match_order();
         }
 
         Ok(catalog)
+    }
+
+    /// Order templates most-specific-first so a general one cannot shadow a
+    /// specific one during [`Catalog::match_message`].
+    fn rebuild_match_order(&mut self) {
+        let mut order: Vec<usize> = (0..self.messages.len()).collect();
+        order.sort_by_key(|&i| std::cmp::Reverse(self.messages[i].template.literal_len()));
+        self.match_order = order;
     }
 
     fn push_message(&mut self, raw: RawMessageEntry) {
@@ -302,18 +359,31 @@ impl Catalog {
     }
 
     /// Look a compiler message up by its text.
+    ///
+    /// This is the fallback path, used only for compiler output produced without
+    /// `-vq`. Templates are tried most-specific-first so a general one cannot
+    /// shadow a specific one.
     pub fn match_message(&self, text: &str) -> Option<MessageMatch> {
-        let (rule, caps) = self
-            .messages
-            .iter()
-            .find_map(|r| r.template.match_text(text).map(|caps| (r, caps)))?;
-        Some(MessageMatch {
-            code: rule.code.clone(),
-            headline: rule.headline.render(&caps),
-            label: rule.label.as_ref().map(|l| l.render(&caps)),
-            help: rule.help.iter().map(|h| h.render(&caps)).collect(),
-            note: rule.note.as_ref().map(|n| n.render(&caps)),
-        })
+        let (rule, caps) = self.match_order.iter().find_map(|&i| {
+            let rule = &self.messages[i];
+            rule.template.match_text(text).map(|caps| (rule, caps))
+        })?;
+        Some(render_rule(rule, &caps))
+    }
+
+    /// Describe a message by its code, capturing arguments from `text`.
+    ///
+    /// This is the id-first path and the one that normally runs: the profile
+    /// requests `-vq`, so every diagnostic carries the compiler's own message
+    /// number and the entry is found by code (`F5000`). Template matching is
+    /// then used only to recover the arguments for the headline.
+    ///
+    /// `None` means there is no entry for the code, or its template does not
+    /// match this text — callers fall back to the raw message.
+    pub fn describe(&self, code: &str, text: &str) -> Option<MessageMatch> {
+        let rule = self.message_by_code(code)?;
+        let caps = rule.template.match_text(text)?;
+        Some(render_rule(rule, &caps))
     }
 
     /// The rule registered for a code, for `fpcheck explain F1234`.
@@ -457,7 +527,11 @@ mod tests {
             "expected a literal annotation, got {:?}",
             entry.help
         );
-        assert!(!entry.help.iter().any(|h| h.contains("{{")), "{:?}", entry.help);
+        assert!(
+            !entry.help.iter().any(|h| h.contains("{{")),
+            "{:?}",
+            entry.help
+        );
     }
 
     #[test]
@@ -471,7 +545,9 @@ mod tests {
     #[test]
     fn template_requires_suffix_literal_to_end_the_message() {
         let t = Template::compile("expected but \"{found}\" found");
-        assert!(t.match_text("Syntax error, \"x\" expected but \"y\" found").is_some());
+        assert!(t
+            .match_text("Syntax error, \"x\" expected but \"y\" found")
+            .is_some());
         assert!(t.match_text("expected but \"y\" found later").is_none());
     }
 
@@ -520,14 +596,123 @@ mod tests {
     }
 
     #[test]
-    fn matching_message_uses_the_template_derived_code() {
-        // A matching message takes the entry's code, and that code is identical
-        // for every instance of the same message.
+    fn matching_message_uses_the_compilers_real_message_number() {
+        // Entries carry the compiler's own number, so the code is F10022 rather
+        // than something derived from the template text.
         let c = Catalog::builtin();
-        let a = c.match_message("Can't find unit SysUtils used by prog").unwrap();
-        let b = c.match_message("Can't find unit Other used by app").unwrap();
+        let a = c
+            .match_message("Can't find unit SysUtils used by prog")
+            .unwrap();
+        let b = c
+            .match_message("Can't find unit Other used by app")
+            .unwrap();
+        assert_eq!(a.code, "F10022");
         assert_eq!(a.code, b.code);
-        assert_eq!(a.code, synthetic_code("Can't find unit {name} used by {user}"));
+    }
+
+    #[test]
+    fn catalogue_carries_the_compilers_real_message_numbers() {
+        // Regression guard on the generated catalogue. These numbers come from
+        // FPC 3.2.2's msg/errore.msg and were confirmed against real compiler
+        // output (see tests/real_fpc.rs).
+        let c = Catalog::builtin();
+        for (text, code) in [
+            ("Identifier not found \"x\"", "F5000"),
+            ("Illegal qualifier", "F3205"),
+            ("Illegal expression", "F3203"),
+            ("Unexpected end of file", "F2000"),
+            ("Duplicate identifier \"x\"", "F5002"),
+            ("Function result does not seem to be set", "F5033"),
+            ("Variable \"x\" does not seem to be initialized", "F5037"),
+            (
+                "Wrong number of parameters specified for call to \"q\"",
+                "F3026",
+            ),
+        ] {
+            assert_eq!(
+                c.match_message(text).map(|m| m.code),
+                Some(code.to_string()),
+                "wrong code for {text}"
+            );
+        }
+    }
+
+    #[test]
+    fn describe_renders_the_entry_for_a_code() {
+        let c = Catalog::builtin();
+        let m = c
+            .describe("F5000", "Identifier not found \"Widget\"")
+            .unwrap();
+        assert_eq!(m.headline, "undeclared identifier `Widget`");
+        assert_eq!(m.label.as_deref(), Some("not found in this scope"));
+        assert!(!m.help.is_empty());
+    }
+
+    #[test]
+    fn describe_is_none_when_the_template_does_not_match() {
+        // A code we know, paired with text from a different message: the caller
+        // must fall back to the raw text rather than print a wrong headline.
+        let c = Catalog::builtin();
+        assert!(c.describe("F5000", "Illegal qualifier").is_none());
+    }
+
+    #[test]
+    fn describe_is_none_for_an_unknown_code() {
+        let c = Catalog::builtin();
+        assert!(c.describe("F999999", "anything").is_none());
+    }
+
+    #[test]
+    fn the_catalogue_is_the_full_compiler_set_with_real_ids() {
+        let c = Catalog::builtin();
+        assert!(
+            c.messages.len() > 900,
+            "expected the full compiler catalogue, got {}",
+            c.messages.len()
+        );
+        for rule in &c.messages {
+            // `F` plus the compiler's number as printed, without leading zeros:
+            // 5000 becomes F5000, and 10022 becomes F10022.
+            let digits = rule
+                .code
+                .strip_prefix('F')
+                .unwrap_or_else(|| panic!("not an F code: {}", rule.code));
+            assert!(
+                !digits.is_empty() && digits.chars().all(|ch| ch.is_ascii_digit()),
+                "{}",
+                rule.code
+            );
+            assert!((4..=5).contains(&digits.len()), "{}", rule.code);
+            assert!(!rule.template.source().is_empty(), "{}", rule.code);
+        }
+    }
+
+    #[test]
+    fn template_matching_is_ordered_most_specific_first() {
+        let c = Catalog::builtin();
+        let len = |i: usize| c.messages[i].template.literal_len();
+        let order = &c.match_order;
+        assert_eq!(order.len(), c.messages.len());
+        assert!(len(order[0]) >= len(order[order.len() - 1]));
+    }
+
+    #[test]
+    fn display_unescapes_braces_and_keeps_placeholder_names() {
+        let t = Template::compile("use {{@allow}} with {p1} here");
+        assert_eq!(t.display(), "use {@allow} with {p1} here");
+    }
+
+    #[test]
+    fn no_real_template_displays_a_doubled_brace() {
+        // Guards the generator's brace escaping across the whole catalogue,
+        // including messages that quote compiler directives like {$M+}.
+        let c = Catalog::builtin();
+        for rule in &c.messages {
+            let template = rule.template.display();
+            assert!(!template.contains("{{"), "{}: {}", rule.code, template);
+            let headline = rule.headline.display();
+            assert!(!headline.contains("{{"), "{}: {}", rule.code, headline);
+        }
     }
 
     #[test]
@@ -560,7 +745,10 @@ mod tests {
         )
         .unwrap();
         let c = Catalog::load_dir(dir.path()).unwrap();
-        assert_eq!(c.match_message("Boom now").unwrap().headline, "exploded at now");
+        assert_eq!(
+            c.match_message("Boom now").unwrap().headline,
+            "exploded at now"
+        );
         // Still has the built-ins.
         assert!(c.match_message("Identifier not found \"z\"").is_some());
     }
@@ -569,7 +757,10 @@ mod tests {
     fn load_dir_reports_bad_toml() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join(LINT_FILE), "=== not toml").unwrap();
-        assert!(matches!(Catalog::load_dir(dir.path()), Err(Error::Catalog(_))));
+        assert!(matches!(
+            Catalog::load_dir(dir.path()),
+            Err(Error::Catalog(_))
+        ));
     }
 
     #[test]

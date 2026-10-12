@@ -123,12 +123,19 @@ pub struct AnalysisResult {
 pub fn analyze_source(file: &SourceFile, opts: &AnalysisOptions) -> AnalysisResult {
     let tokens = tokenize(&file.path, &file.text);
     let allows = collect_allows(&tokens);
-    let ctx = LintContext { file, tokens: &tokens, strictness: opts.strictness };
+    let ctx = LintContext {
+        file,
+        tokens: &tokens,
+        strictness: opts.strictness,
+    };
 
     let mut diagnostics: Vec<Diagnostic> = Vec::new();
     for lint in LINTS {
         for mut diag in (lint.run)(&ctx) {
-            let setting = opts.level_overrides.get(&lint.code.to_ascii_uppercase()).copied();
+            let setting = opts
+                .level_overrides
+                .get(&lint.code.to_ascii_uppercase())
+                .copied();
             match setting {
                 Some(LevelSetting::Allow) => continue,
                 Some(s) => diag.level = s.to_level().unwrap_or(lint.default_level),
@@ -170,8 +177,8 @@ pub fn analyze_source(file: &SourceFile, opts: &AnalysisOptions) -> AnalysisResu
 
 /// Read and analyze a file from disk.
 pub fn analyze_file(path: &Path, opts: &AnalysisOptions) -> Result<AnalysisResult> {
-    let text = std::fs::read_to_string(path)
-        .map_err(|e| Error::io(path.display().to_string(), e))?;
+    let text =
+        std::fs::read_to_string(path).map_err(|e| Error::io(path.display().to_string(), e))?;
     Ok(analyze_source(&SourceFile::new(path, text), opts))
 }
 
@@ -264,9 +271,13 @@ pub(crate) fn collect_allows(tokens: &[Token]) -> Vec<Allow> {
         if token.kind != TokKind::Comment {
             continue;
         }
-        let Some(body) = token.comment_body() else { continue };
+        let Some(body) = token.comment_body() else {
+            continue;
+        };
         let body = body.trim();
-        let Some(rest) = body.strip_prefix("@allow") else { continue };
+        let Some(rest) = body.strip_prefix("@allow") else {
+            continue;
+        };
         let rest = rest.trim();
 
         let mut codes = Vec::new();
@@ -289,7 +300,11 @@ pub(crate) fn collect_allows(tokens: &[Token]) -> Vec<Allow> {
                 }
             }
         }
-        out.push(Allow { codes, reason, span: token.span.clone() });
+        out.push(Allow {
+            codes,
+            reason,
+            span: token.span.clone(),
+        });
     }
     out
 }
@@ -324,7 +339,10 @@ fn is_suppressed(allows: &[Allow], diag: &Diagnostic) -> bool {
         .filter(|a| (a.span.line_start, a.span.col_start) <= target)
         .max_by_key(|a| (a.span.line_start, a.span.col_start));
     match nearest {
-        Some(allow) => allow.codes.iter().any(|c| c.eq_ignore_ascii_case(&diag.code)),
+        Some(allow) => allow
+            .codes
+            .iter()
+            .any(|c| c.eq_ignore_ascii_case(&diag.code)),
         None => false,
     }
 }
@@ -349,7 +367,9 @@ pub(crate) fn in_unsafe_region(tokens: &[Token], index: usize) -> bool {
         if token.kind != TokKind::Comment {
             continue;
         }
-        let Some(body) = token.comment_body() else { continue };
+        let Some(body) = token.comment_body() else {
+            continue;
+        };
         let body = body.trim();
         if body.starts_with("@end_unsafe") {
             depth += 1;
@@ -372,7 +392,11 @@ mod tests {
     }
 
     fn codes(text: &str) -> Vec<String> {
-        analyze(text).diagnostics.into_iter().map(|d| d.code).collect()
+        analyze(text)
+            .diagnostics
+            .into_iter()
+            .map(|d| d.code)
+            .collect()
     }
 
     #[test]
@@ -400,8 +424,7 @@ mod tests {
 
     #[test]
     fn allow_with_a_reason_suppresses_the_lint() {
-        let text =
-            "{@allow(P0702, reason: \"legacy interop\")}\nbegin\n  with Foo do Bar;\nend.\n";
+        let text = "{@allow(P0702, reason: \"legacy interop\")}\nbegin\n  with Foo do Bar;\nend.\n";
         let result = analyze(text);
         assert!(
             !result.diagnostics.iter().any(|d| d.code == "P0702"),
@@ -453,7 +476,8 @@ mod tests {
     #[test]
     fn level_overrides_change_the_reported_level() {
         let mut opts = AnalysisOptions::default();
-        opts.level_overrides.insert("P0702".into(), LevelSetting::Warn);
+        opts.level_overrides
+            .insert("P0702".into(), LevelSetting::Warn);
         let text = "begin\n  with Foo do Bar;\nend.\n";
         let result = analyze_source(&SourceFile::new("t.pas", text), &opts);
         assert_eq!(result.diagnostics[0].level, Level::Warning);
@@ -462,7 +486,8 @@ mod tests {
     #[test]
     fn allow_override_removes_the_lint_entirely() {
         let mut opts = AnalysisOptions::default();
-        opts.level_overrides.insert("P0702".into(), LevelSetting::Allow);
+        opts.level_overrides
+            .insert("P0702".into(), LevelSetting::Allow);
         let text = "begin\n  with Foo do Bar;\nend.\n";
         let result = analyze_source(&SourceFile::new("t.pas", text), &opts);
         assert!(result.diagnostics.is_empty());
@@ -487,8 +512,14 @@ mod tests {
             Path::new("t.pas"),
             "{@unsafe(reason: \"io\")}\n@x\n{@end_unsafe}\n@y\n",
         );
-        let x_index = tokens.iter().position(|t| t.text == "@" && t.line == 2).unwrap();
-        let y_index = tokens.iter().position(|t| t.text == "@" && t.line == 4).unwrap();
+        let x_index = tokens
+            .iter()
+            .position(|t| t.text == "@" && t.line == 2)
+            .unwrap();
+        let y_index = tokens
+            .iter()
+            .position(|t| t.text == "@" && t.line == 4)
+            .unwrap();
         assert!(in_unsafe_region(&tokens, x_index));
         assert!(!in_unsafe_region(&tokens, y_index));
     }

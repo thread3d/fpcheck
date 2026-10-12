@@ -55,7 +55,11 @@ pub struct RenderOptions {
 
 impl Default for RenderOptions {
     fn default() -> Self {
-        RenderOptions { max_diagnostics: 15, context_lines: 2, color: false }
+        RenderOptions {
+            max_diagnostics: 15,
+            context_lines: 2,
+            color: false,
+        }
     }
 }
 
@@ -224,8 +228,17 @@ mod tests {
         let mut sources = SourceManager::new();
         sources.insert(SourceFile::new("a.pas", SOURCE));
         let span = Span::new("a.pas", 2, 3, 2, 11);
-        let mut d = Diagnostic::new("P0702", Level::Error, "`with` is banned", span.clone(), Source::Fpcheck);
-        d.labels.push(Label { span, text: "banned here".into() });
+        let mut d = Diagnostic::new(
+            "P0702",
+            Level::Error,
+            "`with` is banned",
+            span.clone(),
+            Source::Fpcheck,
+        );
+        d.labels.push(Label {
+            span,
+            text: "banned here".into(),
+        });
         d.notes.push("a why".into());
         d.help.push("bind a local instead".into());
         (sources, d)
@@ -285,7 +298,10 @@ mod tests {
     #[test]
     fn human_underlines_a_multi_line_span() {
         let mut sources = SourceManager::new();
-        sources.insert(SourceFile::new("m.pas", "begin\n  a := 1;\n  b := 2;\nend.\n"));
+        sources.insert(SourceFile::new(
+            "m.pas",
+            "begin\n  a := 1;\n  b := 2;\nend.\n",
+        ));
         let span = Span::new("m.pas", 2, 3, 3, 10);
         let d = Diagnostic::new("P0002", Level::Warning, "wide span", span, Source::Fpcheck);
         let text = human::render(&[d], &mut sources, &RenderOptions::default());
@@ -296,14 +312,20 @@ mod tests {
     #[test]
     fn human_is_quiet_when_there_is_nothing_to_say() {
         let mut sources = SourceManager::new();
-        assert_eq!(human::render(&[], &mut sources, &RenderOptions::default()), "");
+        assert_eq!(
+            human::render(&[], &mut sources, &RenderOptions::default()),
+            ""
+        );
     }
 
     #[test]
     fn human_caps_output_and_says_how_many_were_hidden() {
         let (mut sources, d) = setup();
         let diags = vec![d.clone(), d.clone(), d.clone()];
-        let opts = RenderOptions { max_diagnostics: 1, ..Default::default() };
+        let opts = RenderOptions {
+            max_diagnostics: 1,
+            ..Default::default()
+        };
         let text = human::render(&diags, &mut sources, &opts);
         assert!(text.contains("2 more diagnostic(s) not shown"), "{text}");
     }
@@ -326,10 +348,18 @@ mod tests {
     fn llm_is_compact_and_ends_with_the_summary_line() {
         let (mut sources, d) = setup();
         let text = llm::render(&[d], &mut sources, &RenderOptions::default());
-        assert!(text.starts_with("error[P0702] a.pas:2:3: `with` is banned"), "{text}");
+        assert!(
+            text.starts_with("error[P0702] a.pas:2:3: `with` is banned"),
+            "{text}"
+        );
         assert!(text.contains("  note: a why"), "{text}");
         assert!(text.contains("  help: bind a local instead"), "{text}");
-        assert!(text.ends_with("fpcheck: 1 errors, 0 warnings. Run 'fpcheck explain <code>' for details.\n"), "{text}");
+        assert!(
+            text.ends_with(
+                "fpcheck: 1 errors, 0 warnings. Run 'fpcheck explain <code>' for details.\n"
+            ),
+            "{text}"
+        );
         // No box drawing in the agent format.
         assert!(!text.contains('│'), "{text}");
     }
@@ -347,7 +377,10 @@ mod tests {
     fn llm_reports_omitted_diagnostics() {
         let (mut sources, d) = setup();
         let diags = vec![d.clone(), d.clone(), d.clone(), d.clone()];
-        let opts = RenderOptions { max_diagnostics: 2, ..Default::default() };
+        let opts = RenderOptions {
+            max_diagnostics: 2,
+            ..Default::default()
+        };
         let text = llm::render(&diags, &mut sources, &opts);
         assert!(text.contains("2 more diagnostic(s) omitted"), "{text}");
     }
@@ -358,7 +391,10 @@ mod tests {
         let mut w = d.clone();
         w.level = Level::Warning;
         let diags = vec![d, w];
-        let opts = RenderOptions { max_diagnostics: 1, ..Default::default() };
+        let opts = RenderOptions {
+            max_diagnostics: 1,
+            ..Default::default()
+        };
         let text = llm::render(&diags, &mut sources, &opts);
         assert!(text.contains("1 errors, 1 warnings"), "{text}");
     }
@@ -383,7 +419,10 @@ mod tests {
     fn json_is_not_truncated_by_max_diagnostics() {
         let (mut sources, d) = setup();
         let diags = vec![d.clone(), d.clone(), d.clone()];
-        let opts = RenderOptions { max_diagnostics: 1, ..Default::default() };
+        let opts = RenderOptions {
+            max_diagnostics: 1,
+            ..Default::default()
+        };
         let text = json::render(&diags, &mut sources, &opts);
         assert_eq!(text.trim_end().lines().count(), 4);
     }
@@ -428,7 +467,10 @@ mod tests {
         assert!(diff.contains("+++ b/a.pas"), "{diff}");
         assert!(diff.contains("-  with Foo do"), "{diff}");
         assert!(diff.contains("+  Obj do"), "{diff}");
-        assert!(diff.contains(" 1 | program p;") || diff.contains(" program p;"), "{diff}");
+        assert!(
+            diff.contains(" 1 | program p;") || diff.contains(" program p;"),
+            "{diff}"
+        );
     }
 
     #[test]
@@ -442,8 +484,12 @@ mod tests {
         let (mut sources, d) = setup();
         let opts = RenderOptions::default();
         assert!(render(MessageFormat::Human, &[d.clone()], &mut sources, &opts).contains("-->"));
-        assert!(render(MessageFormat::Json, &[d.clone()], &mut sources, &opts).contains("\"summary\""));
-        assert!(render(MessageFormat::Llm, &[d.clone()], &mut sources, &opts).contains("fpcheck: "));
+        assert!(
+            render(MessageFormat::Json, &[d.clone()], &mut sources, &opts).contains("\"summary\"")
+        );
+        assert!(
+            render(MessageFormat::Llm, &[d.clone()], &mut sources, &opts).contains("fpcheck: ")
+        );
         assert!(render(MessageFormat::Sarif, &[d], &mut sources, &opts).contains("2.1.0"));
     }
 
@@ -452,7 +498,12 @@ mod tests {
         let mut sources = SourceManager::new();
         let opts = RenderOptions::default();
         assert_eq!(render(MessageFormat::Human, &[], &mut sources, &opts), "");
-        assert_eq!(render(MessageFormat::Llm, &[], &mut sources, &opts).lines().count(), 1);
+        assert_eq!(
+            render(MessageFormat::Llm, &[], &mut sources, &opts)
+                .lines()
+                .count(),
+            1
+        );
         assert!(render(MessageFormat::Sarif, &[], &mut sources, &opts).contains("results"));
     }
 }

@@ -12,15 +12,7 @@ use crate::lexer::{TokKind, Token};
 
 /// Routine calls that bypass the type system.
 const UNSAFE_CALLS: &[&str] = &[
-    "Addr",
-    "Move",
-    "FillChar",
-    "FillByte",
-    "Pointer",
-    "PtrInt",
-    "PtrUInt",
-    "IntPtr",
-    "UIntPtr",
+    "Addr", "Move", "FillChar", "FillByte", "Pointer", "PtrInt", "PtrUInt", "IntPtr", "UIntPtr",
 ];
 
 pub fn unsafe_outside_unsafe(ctx: &LintContext<'_>) -> Vec<Diagnostic> {
@@ -30,7 +22,9 @@ pub fn unsafe_outside_unsafe(ctx: &LintContext<'_>) -> Vec<Diagnostic> {
         if in_unsafe_region(ctx.tokens, index) {
             continue;
         }
-        let Some(construct) = unsafe_construct(ctx.tokens, index, token) else { continue };
+        let Some(construct) = unsafe_construct(ctx.tokens, index, token) else {
+            continue;
+        };
 
         out.push(
             Diagnostic::lint(
@@ -119,7 +113,10 @@ fn statement_bounds(tokens: &[Token], index: usize) -> (usize, usize) {
             continue;
         }
         let word = token.text.to_ascii_lowercase();
-        if matches!(word.as_str(), ";" | "begin" | "end" | "else" | "then" | "do") {
+        if matches!(
+            word.as_str(),
+            ";" | "begin" | "end" | "else" | "then" | "do"
+        ) {
             start = back + 1;
             break;
         }
@@ -140,9 +137,7 @@ fn statement_bounds(tokens: &[Token], index: usize) -> (usize, usize) {
                 }
                 _ => {}
             }
-            if forward > index
-                && (token.eq_ignore_case("begin") || token.eq_ignore_case("end"))
-            {
+            if forward > index && (token.eq_ignore_case("begin") || token.eq_ignore_case("end")) {
                 end = forward;
                 break;
             }
